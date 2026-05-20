@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
-  Alert, ActivityIndicator, RefreshControl,
+  Alert, ActivityIndicator, RefreshControl, Modal, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -24,6 +24,257 @@ import {
 } from '../../../../../src/api/client';
 import { SPORT_ICONS } from '../../../../../src/theme';
 
+// ── Bracket template (mirrors web getBracketTemplate) ────────────────────────
+function getBracketTemplate(n: number, thirdPlace = false): any {
+  if (n < 2) return null;
+  const bracketSize = Math.pow(2, Math.ceil(Math.log2(Math.max(n, 2))));
+  const halfBracket = bracketSize / 2;
+  const prelimCount = n - halfBracket;
+  const byeCount    = halfBracket - prelimCount;
+
+  const stageForCount = (count: number) => {
+    if (count <= 2)  return { stage: 'final',       label: 'Final'          };
+    if (count <= 4)  return { stage: 'semi',         label: 'Semi Finals'    };
+    if (count <= 8)  return { stage: 'quarter',      label: 'Quarter Finals' };
+    if (count <= 16) return { stage: 'r16',          label: 'Round of 16'    };
+    if (count <= 32) return { stage: 'r32',          label: 'Round of 32'    };
+    return { stage: 'preliminary', label: 'First Round' };
+  };
+
+  const r1 = byeCount > 0
+    ? { stage: 'preliminary', label: 'Preliminary Round' }
+    : stageForCount(n);
+
+  const rounds: any[] = [{ ...r1, matchCount: Math.max(prelimCount, 1), isAssignable: true, byeCount }];
+  let advancing = halfBracket;
+  while (advancing > 1) {
+    const info = stageForCount(advancing);
+    rounds.push({ ...info, matchCount: advancing / 2, isAssignable: false, byeCount: 0 });
+    advancing = advancing / 2;
+  }
+  if (thirdPlace) {
+    rounds.push({ stage: 'third_place', label: '3rd Place', matchCount: 1, isAssignable: false, byeCount: 0 });
+  }
+  return { rounds, byeCount, total: rounds.reduce((s, r) => s + r.matchCount, 0) };
+}
+
+// ── Stage option lists ────────────────────────────────────────────────────────
+const STAGE_OPTIONS_KNOCKOUT = [
+  { value: 'preliminary', label: 'Preliminary'     },
+  { value: 'r32',         label: 'Round of 32'     },
+  { value: 'r16',         label: 'Round of 16'     },
+  { value: 'quarter',     label: 'Quarter Final'   },
+  { value: 'semi',        label: 'Semi Final'      },
+  { value: 'final',       label: 'Final'           },
+  { value: 'third_place', label: '3rd Place Match' },
+];
+const STAGE_OPTIONS_GROUP_KNOCKOUT = [
+  { value: 'group',       label: 'Group Stage'     },
+  { value: 'quarter',     label: 'Quarter Final'   },
+  { value: 'semi',        label: 'Semi Final'      },
+  { value: 'final',       label: 'Final'           },
+  { value: 'third_place', label: '3rd Place Match' },
+];
+
+// ── SelectPicker ─────────────────────────────────────────────────────────────
+// Cross-platform bottom-sheet-style dropdown.
+function SelectPicker({
+  label, value, options, onSelect, placeholder = '— Select —', colors,
+}: {
+  label?: string;
+  value: string;
+  options: { value: string; label: string }[];
+  onSelect: (v: string) => void;
+  placeholder?: string;
+  colors: any;
+}) {
+  const [open, setOpen] = useState(false);
+  const c = colors;
+  const selected = options.find(o => o.value === value);
+
+  return (
+    <View style={{ marginBottom: 12 }}>
+      {label && (
+        <Text style={{ fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5,
+          color: c.muted, marginBottom: 5 }}>
+          {label}
+        </Text>
+      )}
+      <TouchableOpacity onPress={() => setOpen(true)}
+        style={{ backgroundColor: c.elevated, borderRadius: 9, borderWidth: 1.5, borderColor: c.border,
+          paddingHorizontal: 12, paddingVertical: 11, flexDirection: 'row',
+          alignItems: 'center', justifyContent: 'space-between', minHeight: 44 }}>
+        <Text style={{ fontSize: 14, color: selected ? c.ink : c.muted, flex: 1 }}>
+          {selected?.label ?? placeholder}
+        </Text>
+        <Text style={{ color: c.muted, fontSize: 12, marginLeft: 8 }}>▾</Text>
+      </TouchableOpacity>
+
+      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
+        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }}
+          activeOpacity={1} onPress={() => setOpen(false)}>
+          <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
+            backgroundColor: c.surface, borderTopLeftRadius: 18, borderTopRightRadius: 18,
+            paddingBottom: 36, maxHeight: '60%' }}>
+            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: c.border,
+              alignSelf: 'center', marginTop: 12, marginBottom: 8 }} />
+            {label && (
+              <Text style={{ fontSize: 12, fontWeight: '800', color: c.muted,
+                textTransform: 'uppercase', letterSpacing: 1, paddingHorizontal: 18,
+                paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: c.border }}>
+                {label}
+              </Text>
+            )}
+            <ScrollView>
+              {options.map(o => (
+                <TouchableOpacity key={o.value} onPress={() => { onSelect(o.value); setOpen(false); }}
+                  style={{ paddingHorizontal: 18, paddingVertical: 15,
+                    borderBottomWidth: 1, borderBottomColor: c.border,
+                    backgroundColor: o.value === value ? c.primary + '15' : 'transparent',
+                    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Text style={{ fontSize: 15, color: o.value === value ? c.primary : c.ink,
+                    fontWeight: o.value === value ? '700' : '500' }}>
+                    {o.label}
+                  </Text>
+                  {o.value === value && <Text style={{ color: c.primary, fontSize: 16 }}>✓</Text>}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </View>
+  );
+}
+
+// ── ManualMatchCreatorCard ────────────────────────────────────────────────────
+// Collapsible "Add Match Manually" form using SelectPicker dropdowns.
+function ManualMatchCreatorCard({
+  format, groups, participants, isTeam,
+  open, setOpen,
+  p1, setP1, p2, setP2,
+  stage, setStage,
+  groupId, setGroupId,
+  stageOptions, busy,
+  onSubmit, onCancel, colors,
+}: {
+  format: string;
+  groups: any[];
+  participants: { id: number; name: string }[];
+  isTeam: boolean;
+  open: boolean;
+  setOpen: (v: boolean) => void;
+  p1: string; setP1: (v: string) => void;
+  p2: string; setP2: (v: string) => void;
+  stage: string; setStage: (v: string) => void;
+  groupId: string; setGroupId: (v: string) => void;
+  stageOptions: { value: string; label: string }[];
+  busy: boolean;
+  onSubmit: () => void;
+  onCancel: () => void;
+  colors: any;
+}) {
+  const c     = colors;
+  const unit  = isTeam ? 'Team' : 'Player';
+  const p1Obj = participants.find((p: any) => String(p.id) === p1);
+  const p2Obj = participants.find((p: any) => String(p.id) === p2);
+  const groupOptions = groups.map((g: any) => ({ value: String(g.group_id), label: g.name }));
+
+  if (!open) {
+    return (
+      <TouchableOpacity onPress={() => setOpen(true)}
+        style={{ borderRadius: 10, borderWidth: 1.5, borderStyle: 'dashed', borderColor: c.border,
+          paddingVertical: 13, alignItems: 'center', marginBottom: 14 }}>
+        <Text style={{ color: c.muted, fontWeight: '700', fontSize: 13 }}>+ Add Match Manually</Text>
+      </TouchableOpacity>
+    );
+  }
+
+  return (
+    <View style={{ backgroundColor: c.surface, borderRadius: 12, borderWidth: 1.5,
+      borderColor: c.primary + '44', padding: 14, marginBottom: 14 }}>
+      <Text style={{ fontSize: 13, fontWeight: '900', color: c.ink, marginBottom: 14 }}>
+        Add Match Manually
+      </Text>
+
+      {/* Stage */}
+      <SelectPicker
+        label="Stage"
+        value={stage}
+        options={stageOptions}
+        onSelect={setStage}
+        colors={c}
+      />
+
+      {/* Group (only when group_knockout + group stage) */}
+      {format === 'group_knockout' && stage === 'group' && groupOptions.length > 0 && (
+        <SelectPicker
+          label="Group"
+          value={groupId}
+          options={groupOptions}
+          onSelect={setGroupId}
+          placeholder="— Select Group —"
+          colors={c}
+        />
+      )}
+
+      {/* Participant 1 */}
+      <SelectPicker
+        label={`${unit} 1`}
+        value={p1}
+        options={participants
+          .filter((p: any) => String(p.id) !== p2)
+          .map((p: any) => ({ value: String(p.id), label: p.name }))}
+        onSelect={setP1}
+        placeholder={`— Select ${unit} —`}
+        colors={c}
+      />
+
+      {/* Participant 2 */}
+      <SelectPicker
+        label={`${unit} 2`}
+        value={p2}
+        options={participants
+          .filter((p: any) => String(p.id) !== p1)
+          .map((p: any) => ({ value: String(p.id), label: p.name }))}
+        onSelect={setP2}
+        placeholder={`— Select ${unit} —`}
+        colors={c}
+      />
+
+      {/* Preview */}
+      {p1Obj && p2Obj && (
+        <View style={{ backgroundColor: c.elevated, borderRadius: 8, paddingVertical: 10,
+          paddingHorizontal: 14, marginBottom: 12, flexDirection: 'row',
+          alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: c.ink, flex: 1, textAlign: 'right' }}
+            numberOfLines={1}>{p1Obj.name}</Text>
+          <Text style={{ color: c.muted, fontWeight: '900', fontSize: 12 }}>vs</Text>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: c.ink, flex: 1 }}
+            numberOfLines={1}>{p2Obj.name}</Text>
+        </View>
+      )}
+
+      {/* Actions */}
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <TouchableOpacity onPress={onSubmit}
+          disabled={busy || !p1 || !p2}
+          style={{ flex: 1, backgroundColor: c.primary, borderRadius: 10, paddingVertical: 12,
+            alignItems: 'center', opacity: (busy || !p1 || !p2) ? 0.5 : 1 }}>
+          {busy
+            ? <ActivityIndicator color="#fff" size="small" />
+            : <Text style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>Add Match</Text>}
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onCancel}
+          style={{ borderRadius: 10, borderWidth: 1, borderColor: c.border,
+            paddingHorizontal: 16, paddingVertical: 12 }}>
+          <Text style={{ color: c.muted, fontWeight: '700' }}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 const SPORT_META: Record<string, { abbrev: string; label: string }> = {
   table_tennis: { abbrev: 'TT', label: 'Table Tennis' },
   badminton:    { abbrev: 'BD', label: 'Badminton'    },
@@ -34,7 +285,107 @@ const SPORT_META: Record<string, { abbrev: string; label: string }> = {
 const STAGE_LABELS: Record<string, string> = {
   group: 'Group', r128: 'R128', r64: 'R64', r32: 'R32',
   r16: 'R16', qf: 'QF', sf: 'SF', final: 'Final', third_place: '3rd Place',
+  preliminary: 'Prelim', quarter: 'Quarter Final', semi: 'Semi Final',
 };
+
+// ── MatchRow ──────────────────────────────────────────────────────────────────
+// Defined OUTSIDE EventWorkspaceScreen so React never sees a new component type
+// on re-render (which would unmount/remount the component and break touches).
+function MatchRow({
+  m, colors, onScore, onRematch, onDelete,
+}: {
+  m: any;
+  colors: any;
+  onScore:   (id: number) => void;
+  onRematch: (id: number) => void;
+  onDelete:  (id: number) => void;
+}) {
+  const c       = colors;
+  const isLive  = m.status === 'live';
+  const isDone  = m.status === 'done';
+  const stage   = STAGE_LABELS[m.stage] ?? m.stage ?? '';
+
+  const pName = (match: any) => {
+    if (match.player_1?.name) return match.player_1.name;
+    if (match.team_1?.name)   return match.team_1.name;
+    if (match.player1_name)   return match.player1_name;
+    if (match.team1_name)     return match.team1_name;
+    if (match.pair1_name)     return match.pair1_name;
+    return 'TBD';
+  };
+  const p2Name = (match: any) => {
+    if (match.player_2?.name) return match.player_2.name;
+    if (match.team_2?.name)   return match.team_2.name;
+    if (match.player2_name)   return match.player2_name;
+    if (match.team2_name)     return match.team2_name;
+    if (match.pair2_name)     return match.pair2_name;
+    return 'TBD';
+  };
+  const scoreStr = (match: any) =>
+    (match.status === 'done' || match.status === 'live')
+      ? `${match.score_p1 ?? 0} – ${match.score_p2 ?? 0}`
+      : 'vs';
+
+  return (
+    <View style={{ backgroundColor: c.surface, borderRadius: 12, borderWidth: 1,
+      borderColor: isLive ? c.primary + '44' : c.border,
+      borderLeftWidth: 3, borderLeftColor: isLive ? c.primary : isDone ? '#22c55e' : c.border,
+      padding: 12, marginBottom: 8 }}>
+      {!!stage && (
+        <Text style={{ fontSize: 9, fontWeight: '800', color: c.muted,
+          textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>{stage}</Text>
+      )}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: c.ink }}
+          numberOfLines={1}>{pName(m)}</Text>
+        <View style={{ alignItems: 'center', minWidth: 50 }}>
+          {isLive && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginBottom: 2 }}>
+              <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: c.primary }} />
+              <Text style={{ fontSize: 9, color: c.primary, fontWeight: '800' }}>LIVE</Text>
+            </View>
+          )}
+          <Text style={{ fontSize: 15, fontWeight: '900', color: isLive ? c.primary : c.muted }}>
+            {scoreStr(m)}
+          </Text>
+        </View>
+        <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: c.ink, textAlign: 'right' }}
+          numberOfLines={1}>{p2Name(m)}</Text>
+      </View>
+
+      {/* Action buttons */}
+      <View style={{ flexDirection: 'row', gap: 6, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        {(m.status === 'scheduled' || m.status === 'live') && (
+          <TouchableOpacity onPress={() => onScore(m.match_id)}
+            style={{ backgroundColor: c.primary, borderRadius: 7,
+              paddingHorizontal: 14, paddingVertical: 8, minHeight: 36,
+              justifyContent: 'center' }}>
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>
+              {m.status === 'live' ? 'Continue' : 'Score'}
+            </Text>
+          </TouchableOpacity>
+        )}
+        {isDone && (
+          <TouchableOpacity onPress={() => onRematch(m.match_id)}
+            style={{ borderRadius: 7, borderWidth: 1, borderColor: c.border,
+              paddingHorizontal: 14, paddingVertical: 8, minHeight: 36,
+              justifyContent: 'center' }}>
+            <Text style={{ color: c.muted, fontWeight: '700', fontSize: 12 }}>Rematch</Text>
+          </TouchableOpacity>
+        )}
+        {/* Delete — large touch target, no Alert wrapper so gesture fires reliably */}
+        <TouchableOpacity
+          onPress={() => onDelete(m.match_id)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          style={{ borderRadius: 7, borderWidth: 1, borderColor: '#ef444466',
+            width: 36, height: 36, alignItems: 'center', justifyContent: 'center',
+            backgroundColor: '#ef444410' }}>
+          <Text style={{ color: '#ef4444', fontWeight: '800', fontSize: 16, lineHeight: 18 }}>✕</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
 
 export default function EventWorkspaceScreen() {
   const { id, eventId } = useLocalSearchParams<{ id: string; eventId: string }>();
@@ -59,6 +410,19 @@ export default function EventWorkspaceScreen() {
   const [playerName,    setPlayerName]    = useState('');
   const [playerAge,     setPlayerAge]     = useState('');
   const [playerGender,  setPlayerGender]  = useState('Male');
+
+  // Add match manually (when fixtures already exist)
+  const [showAddMatch,  setShowAddMatch]  = useState(false);
+  const [matchP1Id,     setMatchP1Id]     = useState('');
+  const [matchP2Id,     setMatchP2Id]     = useState('');
+  const [matchStage,    setMatchStage]    = useState('semi');
+  const [matchGroupId,  setMatchGroupId]  = useState('');
+  const [addMatchBusy,  setAddMatchBusy]  = useState(false);
+
+  // Fixture setup flow (when no fixtures yet) — 'suggestion' | 'manual_slots'
+  const [fixMode,       setFixMode]       = useState<'suggestion' | 'manual_slots'>('suggestion');
+  const [slots,         setSlots]         = useState<{ p1: string; p2: string }[]>([]);
+  const [slotsBusy,     setSlotsBusy]     = useState(false);
 
   // Add team form
   const [showAddTeam,  setShowAddTeam]  = useState(false);
@@ -220,6 +584,72 @@ export default function EventWorkspaceScreen() {
     } catch (e: any) { Alert.alert('Error', e.message); }
   };
 
+  const handleAddMatch = async () => {
+    if (!matchP1Id || !matchP2Id) { Alert.alert('Select both participants'); return; }
+    if (matchP1Id === matchP2Id)  { Alert.alert('Pick two different participants'); return; }
+    setAddMatchBusy(true);
+    try {
+      const isGroupStage = matchStage === 'group' && currentEvent.format === 'group_knockout';
+      const body: any = {
+        stage:    matchStage || 'semi',
+        round:    1,
+        group_id: isGroupStage && matchGroupId ? parseInt(matchGroupId) : null,
+        ...(isTeam || isDoubles
+          ? { team1_id:   parseInt(matchP1Id), team2_id:   parseInt(matchP2Id) }
+          : { player1_id: parseInt(matchP1Id), player2_id: parseInt(matchP2Id) }),
+      };
+      await apiCreateMatch(token!, currentEvent.event_id, body);
+      setMatchP1Id(''); setMatchP2Id(''); setMatchGroupId('');
+      setShowAddMatch(false);
+      load(); showFlash('Match added!');
+    } catch (e: any) { Alert.alert('Error', e.message); }
+    setAddMatchBusy(false);
+  };
+
+  // Bulk-create first-round slots + TBD later rounds (mirrors web handleBulkCreateMatches)
+  const handleBulkCreateMatches = async (template: any) => {
+    const incomplete = slots.some(s => !s.p1 || !s.p2);
+    if (incomplete) { Alert.alert('Fill all match slots before creating.'); return; }
+    setSlotsBusy(true);
+    try {
+      const first    = template.rounds.find((r: any) => r.isAssignable);
+      const usedIds  = new Set(slots.flatMap(s => [s.p1, s.p2].filter(Boolean)));
+      const byePart  = template.byeCount > 0
+        ? allParticipants.find((p: any) => !usedIds.has(String(p.id)))
+        : null;
+
+      // First round — real participants
+      for (const slot of slots) {
+        await apiCreateMatch(token!, currentEvent.event_id, {
+          stage: first.stage, round: 1,
+          ...(isTeam || isDoubles
+            ? { team1_id:   parseInt(slot.p1), team2_id:   parseInt(slot.p2) }
+            : { player1_id: parseInt(slot.p1), player2_id: parseInt(slot.p2) }),
+        });
+      }
+
+      // Later rounds — TBD placeholders; bye player pre-seeded into first next-round slot
+      let roundNum = 2; let byePlaced = false;
+      for (const round of template.rounds.filter((r: any) => !r.isAssignable)) {
+        for (let i = 0; i < round.matchCount; i++) {
+          const body: any = { stage: round.stage, round: roundNum };
+          if (!byePlaced && byePart) {
+            if (isTeam || isDoubles) body.team1_id   = byePart.id;
+            else                     body.player1_id = byePart.id;
+            byePlaced = true;
+          }
+          await apiCreateMatch(token!, currentEvent.event_id, body);
+        }
+        roundNum++;
+      }
+
+      load();
+      showFlash(`${template.total} match${template.total !== 1 ? 'es' : ''} created!`);
+      setFixMode('suggestion');
+    } catch (e: any) { Alert.alert('Error', e.message); }
+    setSlotsBusy(false);
+  };
+
   const handleMatchAction = async (matchId: number, action: string) => {
     try {
       if (action === 'score' || action === 'start') {
@@ -239,77 +669,33 @@ export default function EventWorkspaceScreen() {
     } catch (e: any) { Alert.alert('Error', e.message); }
   };
 
-  const pName = (m: any) => {
-    if (m.player1_name ?? m.team1_name) return m.player1_name ?? m.team1_name;
-    if (m.pair1_name)  return m.pair1_name;
-    return 'TBD';
-  };
-  const p2Name = (m: any) => {
-    if (m.player2_name ?? m.team2_name) return m.player2_name ?? m.team2_name;
-    if (m.pair2_name)  return m.pair2_name;
-    return 'TBD';
-  };
-  const scoreStr = (m: any) => {
-    if (m.status === 'done' || m.status === 'live') {
-      return `${m.score_p1 ?? 0} – ${m.score_p2 ?? 0}`;
+  // ── Delete handler ────────────────────────────────────────────────────────────
+  // On web, window.confirm() is often silently blocked by the browser, so we
+  // skip Alert.alert entirely and delete immediately.  On native we show the
+  // standard confirmation dialog.
+  const handleDeleteMatch = (matchId: number) => {
+    if (Platform.OS === 'web') {
+      handleMatchAction(matchId, 'delete');
+    } else {
+      Alert.alert('Delete Match', 'Delete this match?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive',
+          onPress: () => handleMatchAction(matchId, 'delete') },
+      ]);
     }
-    return 'vs';
   };
 
-  // ── Match card component ───────────────────────────────────────
-  const MatchRow = ({ m }: { m: any }) => {
-    const isLive      = m.status === 'live';
-    const isDone      = m.status === 'done';
-    const stage       = STAGE_LABELS[m.stage] ?? m.stage ?? '';
-    return (
-      <View style={{ backgroundColor: c.surface, borderRadius: 12, borderWidth: 1,
-        borderColor: isLive ? c.primary + '44' : c.border,
-        borderLeftWidth: 3, borderLeftColor: isLive ? c.primary : isDone ? '#22c55e' : c.border,
-        padding: 12, marginBottom: 8 }}>
-        {stage ? (
-          <Text style={{ fontSize: 9, fontWeight: '800', color: c.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>{stage}</Text>
-        ) : null}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: c.ink }} numberOfLines={1}>{pName(m)}</Text>
-          <View style={{ alignItems: 'center', minWidth: 50 }}>
-            {isLive && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginBottom: 2 }}>
-                <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: c.primary }} />
-                <Text style={{ fontSize: 9, color: c.primary, fontWeight: '800' }}>LIVE</Text>
-              </View>
-            )}
-            <Text style={{ fontSize: 15, fontWeight: '900', color: isLive ? c.primary : c.muted }}>{scoreStr(m)}</Text>
-          </View>
-          <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: c.ink, textAlign: 'right' }} numberOfLines={1}>{p2Name(m)}</Text>
-        </View>
-        {/* Action buttons */}
-        <View style={{ flexDirection: 'row', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-          {(m.status === 'scheduled' || m.status === 'live') && (
-            <TouchableOpacity onPress={() => handleMatchAction(m.match_id, 'score')}
-              style={{ backgroundColor: c.primary, borderRadius: 7, paddingHorizontal: 12, paddingVertical: 6 }}>
-              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>
-                {m.status === 'live' ? 'Continue' : 'Score'}
-              </Text>
-            </TouchableOpacity>
-          )}
-          {isDone && (
-            <TouchableOpacity onPress={() => handleMatchAction(m.match_id, 'rematch')}
-              style={{ borderRadius: 7, borderWidth: 1, borderColor: c.border, paddingHorizontal: 12, paddingVertical: 6 }}>
-              <Text style={{ color: c.muted, fontWeight: '700', fontSize: 12 }}>Rematch</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity onPress={() => {
-            Alert.alert('Delete Match', 'Delete this match?', [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Delete', style: 'destructive', onPress: () => handleMatchAction(m.match_id, 'delete') },
-            ]);
-          }} style={{ borderRadius: 7, borderWidth: 1, borderColor: '#ef444444', paddingHorizontal: 10, paddingVertical: 6 }}>
-            <Text style={{ color: '#ef4444', fontWeight: '700', fontSize: 12 }}>✕</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  };
+  // Shorthand so every <MatchRow> call stays concise
+  const MR = (m: any) => (
+    <MatchRow
+      key={m.match_id}
+      m={m}
+      colors={c}
+      onScore={(id)   => handleMatchAction(id, 'score')}
+      onRematch={(id) => handleMatchAction(id, 'rematch')}
+      onDelete={handleDeleteMatch}
+    />
+  );
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
@@ -340,27 +726,28 @@ export default function EventWorkspaceScreen() {
         </View>
       )}
 
-      {/* Tab bar */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}
-        style={{ borderBottomWidth: 1, borderBottomColor: c.border }}
-        contentContainerStyle={{ paddingHorizontal: 12 }}>
-        {TABS.map(tb => (
-          <TouchableOpacity key={tb} onPress={() => setTab(tb)}
-            style={{ paddingHorizontal: 14, paddingVertical: 12,
-              borderBottomWidth: 2, borderBottomColor: tab === tb ? c.primary : 'transparent',
-              marginRight: 4 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Text style={{ fontSize: 13, fontWeight: '700',
-                color: tab === tb ? c.primary : c.muted }}>{tabLabel(tb)}</Text>
-              {tb === 'live' && liveCount > 0 && (
-                <View style={{ backgroundColor: c.primary, borderRadius: 10, width: 18, height: 18, alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: '900' }}>{liveCount}</Text>
-                </View>
-              )}
-            </View>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      {/* Tab bar — wrapped in View so horizontal ScrollView doesn't steal vertical space */}
+      <View style={{ height: 44, borderBottomWidth: 1, borderBottomColor: c.border }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 12, alignItems: 'center', height: 44 }}>
+          {TABS.map(tb => (
+            <TouchableOpacity key={tb} onPress={() => setTab(tb)}
+              style={{ paddingHorizontal: 14, height: 44, justifyContent: 'center',
+                borderBottomWidth: 2, borderBottomColor: tab === tb ? c.primary : 'transparent',
+                marginRight: 4 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={{ fontSize: 13, fontWeight: '700',
+                  color: tab === tb ? c.primary : c.muted }}>{tabLabel(tb)}</Text>
+                {tb === 'live' && liveCount > 0 && (
+                  <View style={{ backgroundColor: c.primary, borderRadius: 10, width: 18, height: 18, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: '#fff', fontSize: 10, fontWeight: '900' }}>{liveCount}</Text>
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
 
       <ScrollView
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={c.primary} />}
@@ -418,8 +805,8 @@ export default function EventWorkspaceScreen() {
                     { label: 'Squad',    value: `${currentEvent.squad_size ?? 11} players` },
                   ] : []),
                   ...(currentEvent.sport_key === 'football' ? [
-                    { label: 'Format',   value: `${currentEvent.team_size ?? 11}-a-side` },
-                    { label: 'Subs',     value: String(currentEvent.substitutes ?? 5) },
+                    { label: 'Team Size', value: `${currentEvent.team_size ?? 11}-a-side` },
+                    { label: 'Subs',      value: String(currentEvent.substitutes ?? 5) },
                   ] : []),
                   ...((currentEvent.sport_key === 'table_tennis' || currentEvent.sport_key === 'badminton') ? [
                     { label: 'Sets',     value: String(currentEvent.sport_config?.sets_to_win ?? 3) + ' to win' },
@@ -605,122 +992,337 @@ export default function EventWorkspaceScreen() {
         )}
 
         {/* ══ FIXTURES ══════════════════════════════════════════ */}
-        {tab === 'fixtures' && (
-          <View>
-            {/* Generate buttons */}
-            <View style={{ backgroundColor: c.surface, borderRadius: 12, borderWidth: 1, borderColor: c.border,
-              padding: 14, marginBottom: 14, gap: 10 }}>
-              <Text style={{ fontSize: 12, fontWeight: '800', color: c.muted, textTransform: 'uppercase', letterSpacing: 1 }}>
-                Fixture Generation
-              </Text>
+        {tab === 'fixtures' && (() => {
+          const hasMatches   = (currentEvent.matches?.length ?? 0) > 0;
+          const n            = allParticipants.length;
+          const unit         = isTeam ? 'team' : isDoubles ? 'pair' : 'player';
+          const Unit         = isTeam ? 'Team' : isDoubles ? 'Pair' : 'Player';
+          const stageOptions = currentEvent.format === 'group_knockout'
+            ? STAGE_OPTIONS_GROUP_KNOCKOUT : STAGE_OPTIONS_KNOCKOUT;
 
-              {currentEvent.format === 'direct_knockout' && (
-                <>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    <TouchableOpacity onPress={() => setThirdPlace(v => !v)}
-                      style={{ width: 20, height: 20, borderRadius: 4, borderWidth: 2,
-                        borderColor: c.primary, backgroundColor: thirdPlace ? c.primary : 'transparent',
-                        alignItems: 'center', justifyContent: 'center' }}>
-                      {thirdPlace && <Text style={{ color: '#fff', fontSize: 12, fontWeight: '900' }}>✓</Text>}
-                    </TouchableOpacity>
-                    <Text style={{ fontSize: 13, color: c.ink }}>Include 3rd place match</Text>
-                  </View>
-                  <TouchableOpacity onPress={handleGenerateFixtures}
-                    style={{ backgroundColor: c.primary, borderRadius: 10, paddingVertical: 12, alignItems: 'center' }}>
-                    <Text style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>
-                      {currentEvent.match_count ? 'Regenerate Fixtures' : 'Generate Fixtures'}
-                    </Text>
-                  </TouchableOpacity>
-                </>
-              )}
-
-              {currentEvent.format === 'round_robin' && (
+          // ── round_robin: simple generate only ──────────────────────────────
+          if (currentEvent.format === 'round_robin') return (
+            <View>
+              <View style={{ backgroundColor: c.surface, borderRadius: 12, borderWidth: 1, borderColor: c.border, padding: 14, marginBottom: 14, gap: 10 }}>
+                <Text style={{ fontSize: 12, fontWeight: '800', color: c.muted, textTransform: 'uppercase', letterSpacing: 1 }}>
+                  Fixture Generation
+                </Text>
                 <TouchableOpacity onPress={handleGenerateFixtures}
-                  style={{ backgroundColor: c.primary, borderRadius: 10, paddingVertical: 12, alignItems: 'center' }}>
+                  style={{ backgroundColor: c.primary, borderRadius: 10, paddingVertical: 13, alignItems: 'center' }}>
                   <Text style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>
-                    {currentEvent.match_count ? 'Regenerate Fixtures' : 'Generate All Matches'}
+                    {hasMatches ? '↺ Regenerate All Matches' : 'Generate All Matches'}
                   </Text>
                 </TouchableOpacity>
-              )}
-
-              {currentEvent.format === 'group_knockout' && (
-                <>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    <Text style={{ fontSize: 13, color: c.muted }}>Groups:</Text>
-                    <TouchableOpacity onPress={() => setNumGroups(v => Math.max(2, v - 1))}
-                      style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ color: c.ink, fontWeight: '800' }}>−</Text>
-                    </TouchableOpacity>
-                    <Text style={{ fontSize: 16, fontWeight: '900', color: c.ink, minWidth: 24, textAlign: 'center' }}>{numGroups}</Text>
-                    <TouchableOpacity onPress={() => setNumGroups(v => Math.min(8, v + 1))}
-                      style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ color: c.ink, fontWeight: '800' }}>+</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    <Text style={{ fontSize: 13, color: c.muted }}>Qualifiers/group:</Text>
-                    <TouchableOpacity onPress={() => setQpg(v => Math.max(1, v - 1))}
-                      style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ color: c.ink, fontWeight: '800' }}>−</Text>
-                    </TouchableOpacity>
-                    <Text style={{ fontSize: 16, fontWeight: '900', color: c.ink, minWidth: 24, textAlign: 'center' }}>{qpg}</Text>
-                    <TouchableOpacity onPress={() => setQpg(v => Math.min(4, v + 1))}
-                      style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ color: c.ink, fontWeight: '800' }}>+</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    {!currentEvent.groups?.length ? (
-                      <TouchableOpacity onPress={handleGenerateGroups}
-                        style={{ flex: 1, backgroundColor: c.primary, borderRadius: 10, paddingVertical: 11, alignItems: 'center' }}>
-                        <Text style={{ color: '#fff', fontWeight: '800', fontSize: 13 }}>Create Groups</Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <>
-                        <TouchableOpacity onPress={handleGenerateGroups}
-                          style={{ flex: 1, borderRadius: 10, borderWidth: 1, borderColor: c.border, paddingVertical: 11, alignItems: 'center' }}>
-                          <Text style={{ color: c.ink, fontWeight: '700', fontSize: 13 }}>Redo Groups</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={handleGenerateKnockout}
-                          style={{ flex: 1, backgroundColor: c.primary, borderRadius: 10, paddingVertical: 11, alignItems: 'center' }}>
-                          <Text style={{ color: '#fff', fontWeight: '800', fontSize: 13 }}>Gen Knockout</Text>
-                        </TouchableOpacity>
-                      </>
-                    )}
-                  </View>
-                </>
-              )}
+              </View>
+              {hasMatches && (currentEvent.matches ?? []).map((m: any) => MR(m))}
             </View>
+          );
 
-            {/* Match list */}
-            {!currentEvent.matches?.length ? (
-              <Text style={{ color: c.muted, textAlign: 'center', marginTop: 16, fontSize: 14 }}>
-                No matches yet. Generate fixtures above.
-              </Text>
-            ) : (
-              <>
-                {/* Group matches */}
-                {currentEvent.groups?.map((g: any) => {
-                  const gMatches = (currentEvent.matches ?? []).filter((m: any) => m.group_id === g.group_id);
-                  if (!gMatches.length) return null;
-                  return (
-                    <View key={g.group_id} style={{ marginBottom: 8 }}>
-                      <Text style={{ fontSize: 11, fontWeight: '800', color: c.muted,
-                        textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-                        {g.name} · {gMatches.length} matches
-                      </Text>
-                      {gMatches.map((m: any) => <MatchRow key={m.match_id} m={m} />)}
-                    </View>
-                  );
+          // ── group_knockout: groups panel ───────────────────────────────────
+          if (currentEvent.format === 'group_knockout') return (
+            <View>
+              <View style={{ backgroundColor: c.surface, borderRadius: 12, borderWidth: 1, borderColor: c.border, padding: 14, marginBottom: 14, gap: 10 }}>
+                <Text style={{ fontSize: 11, fontWeight: '900', color: c.ink }}>Group + Knockout Setup</Text>
+                <Text style={{ fontSize: 12, color: c.muted }}>{n} {unit}{n !== 1 ? 's' : ''} · Group stage + bracket</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Text style={{ fontSize: 13, color: c.muted }}>Groups:</Text>
+                  <TouchableOpacity onPress={() => setNumGroups(v => Math.max(2, v - 1))}
+                    style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: c.border }}>
+                    <Text style={{ color: c.ink, fontWeight: '800', fontSize: 16 }}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={{ fontSize: 18, fontWeight: '900', color: c.primary, minWidth: 28, textAlign: 'center' }}>{numGroups}</Text>
+                  <TouchableOpacity onPress={() => setNumGroups(v => Math.min(8, v + 1))}
+                    style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: c.border }}>
+                    <Text style={{ color: c.ink, fontWeight: '800', fontSize: 16 }}>+</Text>
+                  </TouchableOpacity>
+                  <Text style={{ fontSize: 12, color: c.muted }}>≈ {n > 0 ? Math.ceil(n / numGroups) : 0} {unit}s/group</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Text style={{ fontSize: 13, color: c.muted }}>Qualify/group:</Text>
+                  <TouchableOpacity onPress={() => setQpg(v => Math.max(1, v - 1))}
+                    style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: c.border }}>
+                    <Text style={{ color: c.ink, fontWeight: '800', fontSize: 16 }}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={{ fontSize: 18, fontWeight: '900', color: c.primary, minWidth: 28, textAlign: 'center' }}>{qpg}</Text>
+                  <TouchableOpacity onPress={() => setQpg(v => Math.min(4, v + 1))}
+                    style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: c.border }}>
+                    <Text style={{ color: c.ink, fontWeight: '800', fontSize: 16 }}>+</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {!currentEvent.groups?.length ? (
+                    <TouchableOpacity onPress={handleGenerateGroups}
+                      style={{ flex: 1, backgroundColor: c.primary, borderRadius: 10, paddingVertical: 12, alignItems: 'center' }}>
+                      <Text style={{ color: '#fff', fontWeight: '800' }}>Create Groups</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <>
+                      <TouchableOpacity onPress={handleGenerateGroups}
+                        style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: c.border, paddingVertical: 12, alignItems: 'center' }}>
+                        <Text style={{ color: c.ink, fontWeight: '700' }}>↺ Redo Groups</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={handleGenerateKnockout}
+                        style={{ flex: 1, backgroundColor: c.primary, borderRadius: 10, paddingVertical: 12, alignItems: 'center' }}>
+                        <Text style={{ color: '#fff', fontWeight: '800' }}>Gen Knockout →</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
+              </View>
+              {/* Add Match Manually (when matches exist) */}
+              {hasMatches && <ManualMatchCreatorCard
+                format={currentEvent.format} groups={currentEvent.groups ?? []}
+                participants={allParticipants} isTeam={isTeam || isDoubles}
+                open={showAddMatch} setOpen={setShowAddMatch}
+                p1={matchP1Id} setP1={setMatchP1Id}
+                p2={matchP2Id} setP2={setMatchP2Id}
+                stage={matchStage} setStage={(v) => { setMatchStage(v); setMatchGroupId(''); }}
+                groupId={matchGroupId} setGroupId={setMatchGroupId}
+                stageOptions={stageOptions} busy={addMatchBusy}
+                onSubmit={handleAddMatch} colors={c}
+                onCancel={() => { setShowAddMatch(false); setMatchP1Id(''); setMatchP2Id(''); }}
+              />}
+              {hasMatches && <>
+                {(currentEvent.groups ?? []).map((g: any) => {
+                  const gm = (currentEvent.matches ?? []).filter((m: any) => m.group_id === g.group_id);
+                  if (!gm.length) return null;
+                  return <View key={g.group_id} style={{ marginBottom: 8 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: c.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>{g.name} · {gm.length} matches</Text>
+                    {gm.map((m: any) => MR(m))}
+                  </View>;
                 })}
-                {/* Ungrouped / knockout matches */}
-                {(currentEvent.matches ?? []).filter((m: any) => !m.group_id).map((m: any) => (
-                  <MatchRow key={m.match_id} m={m} />
-                ))}
-              </>
-            )}
-          </View>
-        )}
+                {(currentEvent.matches ?? []).filter((m: any) => !m.group_id).map((m: any) => MR(m))}
+              </>}
+            </View>
+          );
+
+          // ── direct_knockout ────────────────────────────────────────────────
+          const template = getBracketTemplate(n, thirdPlace);
+
+          // No matches yet → Suggestion panel or Manual slot setup
+          if (!hasMatches) {
+            if (fixMode === 'manual_slots') {
+              // Ensure slots array is sized correctly
+              const firstRound = template?.rounds?.find((r: any) => r.isAssignable);
+              const needed = firstRound?.matchCount ?? 0;
+              if (slots.length !== needed) {
+                setSlots(Array.from({ length: needed }, () => ({ p1: '', p2: '' })));
+              }
+              const usedSet = new Set(slots.flatMap(s => [s.p1, s.p2].filter(Boolean)));
+              const autoFill = () => {
+                const shuffled = [...allParticipants].sort(() => Math.random() - 0.5);
+                setSlots(Array.from({ length: needed }, (_, i) => ({
+                  p1: String(shuffled[i * 2]?.id ?? ''),
+                  p2: String(shuffled[i * 2 + 1]?.id ?? ''),
+                })));
+              };
+              return (
+                <View>
+                  <View style={{ backgroundColor: c.surface, borderRadius: 12, borderWidth: 1.5,
+                    borderColor: c.primary + '44', padding: 14, marginBottom: 14 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 14, fontWeight: '900', color: c.ink }}>Manual Setup — {firstRound?.label}</Text>
+                        <Text style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>
+                          Assign {needed} first-round match{needed !== 1 ? 'es' : ''}.
+                          {template.byeCount > 0 ? ` ${template.byeCount} ${unit}${template.byeCount !== 1 ? 's' : ''} will get a bye.` : ''}
+                        </Text>
+                      </View>
+                      <TouchableOpacity onPress={() => setFixMode('suggestion')}
+                        style={{ borderRadius: 7, borderWidth: 1, borderColor: c.border, paddingHorizontal: 10, paddingVertical: 5, marginLeft: 8 }}>
+                        <Text style={{ color: c.muted, fontSize: 12, fontWeight: '700' }}>← Back</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <TouchableOpacity onPress={autoFill}
+                      style={{ alignSelf: 'flex-start', borderRadius: 7, borderWidth: 1, borderColor: c.border,
+                        paddingHorizontal: 12, paddingVertical: 6, marginTop: 10, marginBottom: 14 }}>
+                      <Text style={{ color: c.ink, fontWeight: '700', fontSize: 12 }}>Auto-fill All</Text>
+                    </TouchableOpacity>
+
+                    {slots.map((slot, idx) => (
+                      <View key={idx} style={{ marginBottom: 14, paddingBottom: 14,
+                        borderBottomWidth: idx < slots.length - 1 ? 1 : 0, borderBottomColor: c.border }}>
+                        <Text style={{ fontSize: 10, fontWeight: '800', color: c.muted,
+                          textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8 }}>
+                          Match {idx + 1}
+                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
+                          <View style={{ flex: 1 }}>
+                            <SelectPicker
+                              label={`${Unit} 1`}
+                              value={slot.p1}
+                              options={allParticipants
+                                .filter((p: any) => String(p.id) === slot.p1 || !usedSet.has(String(p.id)))
+                                .filter((p: any) => String(p.id) !== slot.p2)
+                                .map((p: any) => ({ value: String(p.id), label: p.name }))}
+                              onSelect={v => setSlots(prev => prev.map((s, i) => i === idx ? { ...s, p1: v } : s))}
+                              placeholder="— Select —"
+                              colors={c}
+                            />
+                          </View>
+                          <Text style={{ color: c.muted, fontWeight: '900', fontSize: 12, paddingBottom: 22, paddingHorizontal: 2 }}>vs</Text>
+                          <View style={{ flex: 1 }}>
+                            <SelectPicker
+                              label={`${Unit} 2`}
+                              value={slot.p2}
+                              options={allParticipants
+                                .filter((p: any) => String(p.id) === slot.p2 || !usedSet.has(String(p.id)))
+                                .filter((p: any) => String(p.id) !== slot.p1)
+                                .map((p: any) => ({ value: String(p.id), label: p.name }))}
+                              onSelect={v => setSlots(prev => prev.map((s, i) => i === idx ? { ...s, p2: v } : s))}
+                              placeholder="— Select —"
+                              colors={c}
+                            />
+                          </View>
+                        </View>
+                      </View>
+                    ))}
+
+                    <TouchableOpacity onPress={() => handleBulkCreateMatches(template)}
+                      disabled={slotsBusy || slots.some(s => !s.p1 || !s.p2)}
+                      style={{ backgroundColor: c.primary, borderRadius: 10, paddingVertical: 13,
+                        alignItems: 'center', opacity: (slotsBusy || slots.some(s => !s.p1 || !s.p2)) ? 0.5 : 1 }}>
+                      {slotsBusy
+                        ? <ActivityIndicator color="#fff" />
+                        : <Text style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>
+                            ✓ Create All {template?.total} Matches
+                          </Text>}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            }
+
+            // Suggestion overview
+            return (
+              <View>
+                <View style={{ backgroundColor: c.surface, borderRadius: 12, borderWidth: 1, borderColor: c.border, padding: 16, marginBottom: 14 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '900', color: c.ink, marginBottom: 2 }}>Tournament Setup</Text>
+                  <Text style={{ fontSize: 12, color: c.muted, marginBottom: 16 }}>{n} {unit}{n !== 1 ? 's' : ''} · Direct Knockout</Text>
+
+                  {n < 2 ? (
+                    <Text style={{ color: c.muted, fontSize: 13 }}>Add at least 2 {unit}s to set up the bracket.</Text>
+                  ) : (
+                    <>
+                      {/* 3rd place toggle */}
+                      <TouchableOpacity onPress={() => setThirdPlace(v => !v)}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                        <View style={{ width: 22, height: 22, borderRadius: 5, borderWidth: 2,
+                          borderColor: c.primary, backgroundColor: thirdPlace ? c.primary : 'transparent',
+                          alignItems: 'center', justifyContent: 'center' }}>
+                          {thirdPlace && <Text style={{ color: '#fff', fontSize: 13, fontWeight: '900' }}>✓</Text>}
+                        </View>
+                        <Text style={{ fontSize: 13, color: c.ink }}>Include 3rd place match</Text>
+                      </TouchableOpacity>
+
+                      {/* Bracket rounds flow */}
+                      {template && (
+                        <View style={{ marginBottom: 18 }}>
+                          <Text style={{ fontSize: 10, fontWeight: '800', color: c.muted,
+                            textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 10 }}>
+                            Bracket — {template.total} match{template.total !== 1 ? 'es' : ''} total
+                          </Text>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={{ gap: 4, alignItems: 'center' }}>
+                            {template.rounds.map((r: any, i: number) => (
+                              <React.Fragment key={r.stage + i}>
+                                {i > 0 && <Text style={{ color: c.muted, fontSize: 14, paddingHorizontal: 2 }}>→</Text>}
+                                <View style={{ backgroundColor: r.isAssignable ? c.primary + '18' : c.elevated,
+                                  borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8,
+                                  borderWidth: 1, borderColor: r.isAssignable ? c.primary + '55' : c.border,
+                                  alignItems: 'center', minWidth: 80 }}>
+                                  <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.3,
+                                    color: r.isAssignable ? c.primary : c.ink, textTransform: 'uppercase' }}>
+                                    {r.label}
+                                  </Text>
+                                  <Text style={{ fontSize: 11, color: c.muted, marginTop: 2 }}>
+                                    {r.matchCount} match{r.matchCount !== 1 ? 'es' : ''}
+                                  </Text>
+                                </View>
+                              </React.Fragment>
+                            ))}
+                          </ScrollView>
+                          {template.byeCount > 0 && (
+                            <View style={{ backgroundColor: c.elevated, borderRadius: 8, padding: 8, marginTop: 10 }}>
+                              <Text style={{ fontSize: 11, color: c.muted }}>
+                                ℹ {template.byeCount} {unit}{template.byeCount !== 1 ? 's' : ''} will get a bye to the next round.
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                      )}
+
+                      <View style={{ flexDirection: 'row', gap: 10 }}>
+                        <TouchableOpacity onPress={handleGenerateFixtures}
+                          style={{ flex: 1, backgroundColor: c.primary, borderRadius: 10, paddingVertical: 13, alignItems: 'center' }}>
+                          <Text style={{ color: '#fff', fontWeight: '800', fontSize: 13 }}>Auto Generate</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => {
+                          const first = template?.rounds?.find((r: any) => r.isAssignable);
+                          setSlots(Array.from({ length: first?.matchCount ?? 0 }, () => ({ p1: '', p2: '' })));
+                          setFixMode('manual_slots');
+                        }} style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: c.border, paddingVertical: 13, alignItems: 'center' }}>
+                          <Text style={{ color: c.ink, fontWeight: '700', fontSize: 13 }}>Set Up Manually</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  )}
+                </View>
+              </View>
+            );
+          }
+
+          // Matches exist → control bar + Add Match + list
+          return (
+            <View>
+              {/* Regenerate + 3rd place controls */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                <TouchableOpacity onPress={() => setThirdPlace(v => !v)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                    borderRadius: 8, borderWidth: 1, borderColor: c.border,
+                    paddingHorizontal: 10, paddingVertical: 7 }}>
+                  <View style={{ width: 16, height: 16, borderRadius: 3, borderWidth: 2,
+                    borderColor: c.primary, backgroundColor: thirdPlace ? c.primary : 'transparent',
+                    alignItems: 'center', justifyContent: 'center' }}>
+                    {thirdPlace && <Text style={{ color: '#fff', fontSize: 10, fontWeight: '900' }}>✓</Text>}
+                  </View>
+                  <Text style={{ fontSize: 12, color: c.muted }}>3rd place</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleGenerateFixtures}
+                  style={{ flex: 1, backgroundColor: c.elevated, borderRadius: 8, borderWidth: 1, borderColor: c.border, paddingVertical: 8, alignItems: 'center' }}>
+                  <Text style={{ color: c.ink, fontWeight: '700', fontSize: 12 }}>↺ Regenerate Fixtures</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Add Match Manually */}
+              <ManualMatchCreatorCard
+                format={currentEvent.format} groups={currentEvent.groups ?? []}
+                participants={allParticipants} isTeam={isTeam || isDoubles}
+                open={showAddMatch} setOpen={setShowAddMatch}
+                p1={matchP1Id} setP1={setMatchP1Id}
+                p2={matchP2Id} setP2={setMatchP2Id}
+                stage={matchStage} setStage={(v) => { setMatchStage(v); setMatchGroupId(''); }}
+                groupId={matchGroupId} setGroupId={setMatchGroupId}
+                stageOptions={stageOptions} busy={addMatchBusy}
+                onSubmit={handleAddMatch} colors={c}
+                onCancel={() => { setShowAddMatch(false); setMatchP1Id(''); setMatchP2Id(''); }}
+              />
+
+              {/* Match list */}
+              {(currentEvent.groups ?? []).map((g: any) => {
+                const gm = (currentEvent.matches ?? []).filter((m: any) => m.group_id === g.group_id);
+                if (!gm.length) return null;
+                return <View key={g.group_id} style={{ marginBottom: 8 }}>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: c.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+                    {g.name} · {gm.length} matches
+                  </Text>
+                  {gm.map((m: any) => MR(m))}
+                </View>;
+              })}
+              {(currentEvent.matches ?? []).filter((m: any) => !m.group_id).map((m: any) => MR(m))}
+            </View>
+          );
+        })()}
 
         {/* ══ STANDINGS ══════════════════════════════════════════ */}
         {tab === 'standings' && (
@@ -786,7 +1388,7 @@ export default function EventWorkspaceScreen() {
                       textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
                       ● Live Now ({liveCount})
                     </Text>
-                    {liveMatches.map((m: any) => <MatchRow key={m.match_id} m={m} />)}
+                    {liveMatches.map((m: any) => MR(m))}
                   </View>
                 )}
                 {scheduledMatches.length > 0 && (
@@ -795,7 +1397,7 @@ export default function EventWorkspaceScreen() {
                       textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
                       Scheduled ({scheduledMatches.length})
                     </Text>
-                    {scheduledMatches.map((m: any) => <MatchRow key={m.match_id} m={m} />)}
+                    {scheduledMatches.map((m: any) => MR(m))}
                   </View>
                 )}
                 {doneMatches.length > 0 && (
@@ -804,7 +1406,7 @@ export default function EventWorkspaceScreen() {
                       textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
                       Completed ({doneMatches.length})
                     </Text>
-                    {doneMatches.map((m: any) => <MatchRow key={m.match_id} m={m} />)}
+                    {doneMatches.map((m: any) => MR(m))}
                   </View>
                 )}
               </>

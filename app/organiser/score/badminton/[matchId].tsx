@@ -174,10 +174,26 @@ export default function BadmintonScorerScreen() {
               <Text style={{ color: C.blue, fontWeight: '800' }}>{setsWon2}</Text>
             </Text>
           </View>
-          <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/organiser' as any)}
-            style={{ borderRadius: 7, borderWidth: 1, borderColor: C.border, paddingHorizontal: 12, paddingVertical: 6 }}>
-            <Text style={{ color: C.muted, fontSize: 12, fontWeight: '700' }}>✕ Close</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity
+              onPress={() => router.push({
+                pathname: '/organiser/score/stream/[matchId]',
+                params: {
+                  matchId,
+                  eventId:      params.eventId ?? '',
+                  tournamentId: params.tournamentId ?? '',
+                  sport:        'badminton',
+                },
+              } as any)}
+              style={{ borderRadius: 7, borderWidth: 1, borderColor: '#ef4444' + '66',
+                paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#ef4444' + '12' }}>
+              <Text style={{ color: '#ef4444', fontSize: 12, fontWeight: '700' }}>Stream</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/organiser' as any)}
+              style={{ borderRadius: 7, borderWidth: 1, borderColor: C.border, paddingHorizontal: 12, paddingVertical: 6 }}>
+              <Text style={{ color: C.muted, fontSize: 12, fontWeight: '700' }}>✕ Close</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 16, gap: 16 }}>
@@ -222,7 +238,7 @@ export default function BadmintonScorerScreen() {
           {matchWinner && (
             <Text style={{ textAlign: 'center', color: C.gold, fontWeight: '900', fontSize: 18,
               textTransform: 'uppercase', letterSpacing: 2 }}>
-              {matchWinner === 1 ? p1Name : p2Name} Wins! 🏸
+              {matchWinner === 1 ? p1Name : p2Name} Wins!
             </Text>
           )}
 

@@ -88,17 +88,23 @@ export default function CreateTournamentScreen() {
       if (isFootball) { sportConfig.squad_size = subformat?.squad_size??11; sportConfig.team_size = subformat?.team_size??11; sportConfig.substitutes = subformat?.substitutes??5; }
       if (subformat?.mixed) sportConfig.mixed = true;
 
+      // Generate event name: "Table Tennis — Singles", "Football — 11-a-side", etc.
+      const eventName = subformat?.label
+        ? `${sport.label} — ${subformat.label}`
+        : sport.label;
+
       const payload = {
         name: name.trim(), city: city.trim()||null, venue: venue.trim()||null,
         is_published: true,
         events: [{
-          sport_key: sport.key,
+          name:             eventName,
+          sport_key:        sport.key,
           format,
           participant_type: pType,
-          sport_config: sportConfig,
-          squad_size:   subformat?.squad_size,
-          team_size:    subformat?.team_size,
-          substitutes:  subformat?.substitutes,
+          sport_config:     sportConfig,
+          squad_size:       subformat?.squad_size,
+          team_size:        subformat?.team_size,
+          substitutes:      subformat?.substitutes,
         }],
       };
 
@@ -258,16 +264,15 @@ export default function CreateTournamentScreen() {
             <Text style={[cr.heading, { color:c.ink }]}>Review & Create</Text>
             <View style={[cr.reviewBox, { backgroundColor:c.surface, borderColor:c.border }]}>
               {[
-                ['Sport',    sport?.label],
-                ['Variant',  subformat?.label],
-                ['Format',   FORMATS.find(f=>f.key===format)?.label],
-                ['Name',     name],
-                city   ? ['City', city] : null,
-                venue  ? ['Venue', venue] : null,
+                ['Tournament', name],
+                city   ? ['City',   city]  : null,
+                venue  ? ['Venue',  venue] : null,
+                ['Event',   subformat?.label ? `${sport?.label} — ${subformat.label}` : sport?.label],
+                ['Format',  FORMATS.find(f=>f.key===format)?.label],
               ].filter(Boolean).map(([l,v]) => (
-                <View key={l as string} style={{ flexDirection:'row', justifyContent:'space-between', paddingVertical:8, borderBottomWidth:1, borderBottomColor:c.border }}>
-                  <Text style={{ color:c.muted, fontSize:13 }}>{l}</Text>
-                  <Text style={{ color:c.ink, fontWeight:'700', fontSize:13 }}>{v as string}</Text>
+                <View key={l as string} style={{ flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingVertical:10, borderBottomWidth:1, borderBottomColor:c.border }}>
+                  <Text style={{ fontFamily: F.bold, color:c.muted, fontSize:11, textTransform:'uppercase', letterSpacing:0.5 }}>{l}</Text>
+                  <Text style={{ fontFamily: F.bold, color:c.ink, fontSize:13 }}>{v as string}</Text>
                 </View>
               ))}
             </View>

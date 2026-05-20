@@ -12,7 +12,7 @@ import { useRouter } from 'expo-router';
 import { useTheme } from '../../src/hooks/useTheme';
 import { apiGetHomepage } from '../../src/api/client';
 import TournamentCard from '../../src/components/shared/TournamentCard';
-import { F, SPORT_COLORS, SPORT_LABELS, SPORT_ICONS } from '../../src/theme';
+import { F, SPORT_COLORS, SPORT_LABELS } from '../../src/theme';
 
 const SPORTS = ['football', 'cricket', 'table_tennis', 'badminton'];
 
@@ -64,9 +64,9 @@ export default function HomeScreen() {
     <SafeAreaView style={[s.flex, { backgroundColor: c.bg }]}>
       {/* Header */}
       <View style={[s.header, { borderBottomColor: c.border }]}>
-        {/* Brand: "The" + "Score" (primary) + "Board" — matches web */}
+        {/* Brand: "THE" + "SCORE" (primary) + "BOARD" — matches web */}
         <Text style={[s.brand, { color: c.ink }]}>
-          The<Text style={{ color: c.primary }}>Score</Text>Board
+          THE<Text style={{ color: c.primary }}>SCORE</Text>BOARD
         </Text>
         <TouchableOpacity onPress={toggle} style={[s.themeBtn, { borderColor: c.border }]}>
           <Text style={[s.themeBtnText, { color: c.muted }]}>
@@ -122,9 +122,6 @@ export default function HomeScreen() {
                 style={[s.sportCard, { backgroundColor: color + '15', borderColor: color + '33', borderTopColor: color }]}
                 activeOpacity={0.8}
               >
-                <View style={[s.sportAbbrev, { backgroundColor: color + '22' }]}>
-                  <Text style={[s.sportAbbrevText, { fontFamily: F.display, color }]}>{SPORT_ICONS[sk]}</Text>
-                </View>
                 <Text style={[s.sportName, { fontFamily: F.bold, color }]}>{SPORT_LABELS[sk]}</Text>
                 {liveCount > 0 && (
                   <View style={[s.sportLive, { backgroundColor: color + '22' }]}>
@@ -163,7 +160,7 @@ export default function HomeScreen() {
 const s = StyleSheet.create({
   flex:            { flex: 1 },
   header:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, height: 56, borderBottomWidth: 1.5 },
-  brand:           { fontSize: 17, fontFamily: 'Unbounded_900Black', letterSpacing: -0.5 },
+  brand:           { fontSize: 19, fontFamily: 'Unbounded_900Black', letterSpacing: -1 },
   themeBtn:        { borderRadius: 6, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5 },
   themeBtnText:    { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
   searchWrap:      { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginVertical: 10, borderRadius: 8, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 11 },
@@ -175,8 +172,6 @@ const s = StyleSheet.create({
   sectionTitle:    { fontSize: 14, fontWeight: '900', letterSpacing: -0.3 },
   sportGrid:       { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12, gap: 8 },
   sportCard:       { flex: 1, minWidth: '45%', borderRadius: 12, borderWidth: 1.5, borderTopWidth: 3, padding: 16, alignItems: 'center', gap: 8 },
-  sportAbbrev:     { borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
-  sportAbbrevText: { fontSize: 14, fontWeight: '900', letterSpacing: 0.5 },
   sportName:       { fontSize: 12, fontWeight: '700', textAlign: 'center' },
   sportLive:       { borderRadius: 4, paddingHorizontal: 8, paddingVertical: 3 },
   sportLiveText:   { fontSize: 10, fontWeight: '700' },

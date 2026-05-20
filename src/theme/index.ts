@@ -113,10 +113,10 @@ export const SPORT_LABELS: Record<string, string> = {
 };
 
 export const SPORT_ICONS: Record<string, string> = {
-  football:     'FB',
-  cricket:      'CR',
-  table_tennis: 'TT',
-  badminton:    'BD',
+  football:     '⚽',
+  cricket:      '🏏',
+  table_tennis: '🏓',
+  badminton:    '🏸',
 };
 
 export const STATUS_LABELS: Record<string, string> = {

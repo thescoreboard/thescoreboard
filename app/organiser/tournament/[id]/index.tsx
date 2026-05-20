@@ -12,7 +12,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTheme } from '../../../../src/hooks/useTheme';
 import { useAuthStore } from '../../../../src/store/auth';
 import {
-  apiGetWorkspace, apiTransitionTournament, apiUpdateTournament,
+  apiGetWorkspace, apiTransitionTournament, apiUpdateTournament, apiDeleteTournament,
 } from '../../../../src/api/client';
 import { F, STATUS_LABELS, STATUS_COLORS } from '../../../../src/theme';
 
@@ -22,10 +22,10 @@ const LIFECYCLE_LABELS: Record<string, string> = {
 };
 
 const SPORT_META: Record<string, { abbrev: string; label: string; type: string }> = {
-  table_tennis: { abbrev: 'TT', label: 'Table Tennis', type: 'individual' },
-  badminton:    { abbrev: 'BD', label: 'Badminton',    type: 'individual' },
-  cricket:      { abbrev: 'CR', label: 'Cricket',      type: 'team'       },
-  football:     { abbrev: 'FB', label: 'Football',     type: 'team'       },
+  table_tennis: { abbrev: 'T', label: 'Table Tennis', type: 'individual' },
+  badminton:    { abbrev: 'B', label: 'Badminton',    type: 'individual' },
+  cricket:      { abbrev: 'C', label: 'Cricket',      type: 'team'       },
+  football:     { abbrev: 'F', label: 'Football',     type: 'team'       },
 };
 
 export default function TournamentOverviewScreen() {
@@ -118,6 +118,27 @@ export default function TournamentOverviewScreen() {
     }
   };
 
+  const handleDelete = () => {
+    Alert.alert(
+      'Delete Tournament',
+      `Delete "${t?.name ?? 'this tournament'}"? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: async () => {
+            try {
+              await apiDeleteTournament(token!, t.org_id, parseInt(id));
+              router.replace('/(tabs)/organiser' as any);
+            } catch (e: any) {
+              Alert.alert('Error', e.message);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   if (loading && !data) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
@@ -152,13 +173,23 @@ export default function TournamentOverviewScreen() {
         </TouchableOpacity>
         <Text style={{ fontSize: 14, fontWeight: '800', color: c.ink, flex: 1, marginHorizontal: 12 }}
           numberOfLines={1}>{t.name}</Text>
-        {t.status === 'live' && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
-            backgroundColor: c.primary + '22', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
-            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: c.primary }} />
-            <Text style={{ fontSize: 11, fontWeight: '800', color: c.primary }}>LIVE</Text>
-          </View>
-        )}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {t.status === 'live' && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
+              backgroundColor: c.primary + '22', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: c.primary }} />
+              <Text style={{ fontSize: 11, fontWeight: '800', color: c.primary }}>LIVE</Text>
+            </View>
+          )}
+          {/* Delete button in header */}
+          <TouchableOpacity
+            onPress={handleDelete}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={{ borderRadius: 8, borderWidth: 1, borderColor: '#ef444444',
+              paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#ef444410' }}>
+            <Text style={{ color: '#ef4444', fontSize: 12, fontWeight: '700' }}>Delete</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Flash */}
@@ -459,7 +490,7 @@ export default function TournamentOverviewScreen() {
                     <View style={{ width: 44, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
                       backgroundColor: needs ? 'rgba(255,204,0,0.12)' : c.primary + '22',
                       borderWidth: 1, borderColor: needs ? 'rgba(255,204,0,0.3)' : c.primary + '44' }}>
-                      <Text style={{ fontSize: 14, fontWeight: '900', color: needs ? '#b8860b' : c.primary, letterSpacing: 0.5 }}>{sm.abbrev}</Text>
+                      <Text style={{ fontSize: 18, fontWeight: '900', color: needs ? '#b8860b' : c.primary }}>{sm.abbrev}</Text>
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontFamily: F.display, fontSize: 12, color: c.ink, letterSpacing: -0.3 }}>{ev.name}</Text>

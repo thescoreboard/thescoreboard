@@ -38,7 +38,11 @@
     "react-native-screens": "3.31.1",
     "react-native-svg": "15.2.0",
     "react-native-web": "~0.19.10",
-    "zustand": "^4.5.2"
+    "zustand": "^4.5.2",
+    "expo-auth-session": "~5.5.2",
+    "expo-web-browser": "~13.0.3",
+    "expo-dev-client": "~4.0.29",
+    "react-native-rtmp-publisher": "^0.4.7"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",

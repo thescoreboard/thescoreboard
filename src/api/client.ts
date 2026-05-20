@@ -217,12 +217,20 @@ export const apiGetEventTeams = (token: string, eId: number) =>
 // ── Public ──────────────────────────────────────────────────────
 export const apiGetHomepage       = (q?: string) =>
   request('GET', `/public/home${q ? `?q=${encodeURIComponent(q)}` : ''}`, null);
-export const apiGetSportPage      = (sport: string, city?: string, q?: string) => {
+// Backend URL slugs differ from internal sport keys (table-tennis vs table_tennis)
+const SPORT_KEY_TO_URL: Record<string, string> = {
+  table_tennis: 'table-tennis',
+  football:     'football',
+  cricket:      'cricket',
+  badminton:    'badminton',
+};
+export const apiGetSportPage = (sport: string, city?: string, q?: string) => {
+  const sportUrl = SPORT_KEY_TO_URL[sport] ?? sport;
   const params = new URLSearchParams();
   if (city) params.append('city', city);
   if (q)    params.append('q', q);
   const qs = params.toString();
-  return request('GET', `/public/sport/${sport}${qs ? `?${qs}` : ''}`, null);
+  return request('GET', `/public/sport/${sportUrl}${qs ? `?${qs}` : ''}`, null);
 };
 export const apiGetTournamentBySlug = (slug: string) =>
   request('GET', `/public/t/${slug}`, null);

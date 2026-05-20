@@ -23,7 +23,16 @@ export default function LoginScreen() {
     try {
       const data = await apiLogin({ email: email.trim().toLowerCase(), password });
       await setToken(data.access_token);
-      router.replace('/(tabs)/profile');
+
+      // Honour any saved redirect intent (e.g. from tournament registration flow)
+      const { storage } = await import('../../src/utils/storage');
+      const next = await storage.getItem('tsb_next');
+      if (next) {
+        await storage.deleteItem('tsb_next');
+        router.replace(next as any);
+      } else {
+        router.replace('/(tabs)/organiser');
+      }
     } catch (e: any) {
       Alert.alert('Login failed', e.message ?? 'Invalid credentials');
     }
@@ -40,7 +49,7 @@ export default function LoginScreen() {
 
           {/* Brand */}
           <Text style={[s.brand, { color: c.ink }]}>
-            The<Text style={{ color: c.primary }}>Score</Text>Board
+            THE<Text style={{ color: c.primary }}>SCORE</Text>BOARD
           </Text>
 
           <Text style={[s.title, { fontFamily: F.display, color: c.ink }]}>Welcome back</Text>
@@ -88,7 +97,7 @@ export default function LoginScreen() {
 
 const s = StyleSheet.create({
   wrap:    { padding:24, flexGrow:1 },
-  brand:   { fontFamily: 'Unbounded_900Black', fontSize: 17, letterSpacing: -0.5, marginBottom: 28 },
+  brand:   { fontFamily: 'Unbounded_900Black', fontSize: 19, letterSpacing: -1, marginBottom: 28 },
   title:   { fontSize: 22, fontWeight:'900', letterSpacing:-0.5, marginBottom:4 },
   sub:     { fontSize: 14, marginBottom: 0 },
   label:   { fontSize:11, fontWeight:'700', textTransform:'uppercase', letterSpacing:0.8, marginBottom:6 },

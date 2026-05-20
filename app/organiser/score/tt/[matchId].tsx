@@ -259,6 +259,21 @@ export default function TTScorerScreen() {
                 <Text style={{ color: C.green, fontSize: 12, fontWeight: '700' }}>⇌</Text>
               </TouchableOpacity>
             )}
+            {/* Live Stream button */}
+            <TouchableOpacity
+              onPress={() => router.push({
+                pathname: '/organiser/score/stream/[matchId]',
+                params: {
+                  matchId,
+                  eventId:      params.eventId ?? '',
+                  tournamentId: params.tournamentId ?? '',
+                  sport:        'tt',
+                },
+              } as any)}
+              style={{ borderRadius: 7, borderWidth: 1, borderColor: '#ef4444' + '66',
+                paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#ef4444' + '12' }}>
+              <Text style={{ color: '#ef4444', fontSize: 12, fontWeight: '700' }}>Stream</Text>
+            </TouchableOpacity>
             <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/organiser' as any)}
               style={{ borderRadius: 7, borderWidth: 1, borderColor: C.border,
                 paddingHorizontal: 12, paddingVertical: 6 }}>
@@ -373,7 +388,7 @@ export default function TTScorerScreen() {
           {matchWinner && (
             <Text style={{ textAlign: 'center', fontSize: 18, fontWeight: '900', color: C.gold,
               textTransform: 'uppercase', letterSpacing: 2 }}>
-              {matchWinner === leftPos ? leftName : rightName} Wins! 🏆
+              {matchWinner === leftPos ? leftName : rightName} Wins!
             </Text>
           )}
 

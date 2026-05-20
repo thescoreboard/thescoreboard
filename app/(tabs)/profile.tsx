@@ -190,11 +190,13 @@ export default function ProfileScreen() {
         </View>
 
         {/* Actions */}
-        <TouchableOpacity onPress={() => router.replace('/(tabs)/organiser' as any)}
-          style={[s.actionBtn, { backgroundColor: c.surface, borderColor: c.border }]}>
-          <Text style={{ fontSize:11, color:c.muted, fontWeight:'800', textTransform:'uppercase' }}>Switch to</Text>
-          <Text style={{ fontSize:15, fontWeight:'700', color:c.ink }}>Organiser Mode</Text>
-        </TouchableOpacity>
+        {!user?.is_superadmin && (
+          <TouchableOpacity onPress={() => router.replace('/(tabs)/organiser' as any)}
+            style={[s.actionBtn, { backgroundColor: c.surface, borderColor: c.border }]}>
+            <Text style={{ fontSize:11, color:c.muted, fontWeight:'800', textTransform:'uppercase' }}>Switch to</Text>
+            <Text style={{ fontSize:15, fontWeight:'700', color:c.ink }}>Organiser Mode</Text>
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity onPress={() => { clearToken(); }}
           style={[s.actionBtn, { backgroundColor: c.surface, borderColor: c.border }]}>

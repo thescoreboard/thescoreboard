@@ -252,7 +252,7 @@ export default function TournamentPublicScreen() {
                 <Text style={{ fontFamily: F.bold, fontSize:10, fontWeight:'700', letterSpacing:1, color:sportColor }}>{(SPORT_LABELS[primarySport]??'').toUpperCase()}</Text>
               </View>
             )}
-            {t.status !== 'live' && (
+            {t.status && t.status !== 'live' && (
               <View style={[hero.pill, { backgroundColor: (STATUS_COLORS[t.status]??'#888')+'22', borderColor:(STATUS_COLORS[t.status]??'#888')+'44' }]}>
                 <Text style={{ fontFamily: F.bold, fontSize:10, fontWeight:'700', letterSpacing:1, color: STATUS_COLORS[t.status]??'#888' }}>{(STATUS_LABELS[t.status]??t.status).toUpperCase()}</Text>
               </View>

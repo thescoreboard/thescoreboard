@@ -43,7 +43,7 @@ export default function RegisterScreen() {
 
           {/* Brand */}
           <Text style={[s.brand, { color: c.ink }]}>
-            The<Text style={{ color: c.primary }}>Score</Text>Board
+            THE<Text style={{ color: c.primary }}>SCORE</Text>BOARD
           </Text>
 
           <Text style={[s.title, { fontFamily: F.display, color: c.ink }]}>Create account</Text>
@@ -91,7 +91,7 @@ export default function RegisterScreen() {
 }
 
 const s = StyleSheet.create({
-  brand:   { fontFamily: 'Unbounded_900Black', fontSize: 17, letterSpacing: -0.5, marginBottom: 28 },
+  brand:   { fontFamily: 'Unbounded_900Black', fontSize: 19, letterSpacing: -1, marginBottom: 28 },
   title:   { fontSize: 22, fontWeight:'900', letterSpacing:-0.5, marginBottom:4 },
   sub:     { fontSize: 14 },
   label:   { fontSize:11, fontWeight:'700', textTransform:'uppercase', letterSpacing:0.8, marginBottom:6 },
