@@ -2,13 +2,13 @@
  * Table Tennis Scorer — fullscreen mobile scorer.
  * Mirrors TTScorer.jsx: set confirmation overlay, serve tracking, swap sides.
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView,
   ActivityIndicator, Alert, Modal, StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { useAuthStore } from '../../../../src/store/auth';
 import {
   apiUpdateMatchStatus, apiUpdateScore, apiUndoSet, apiWalkoverMatch, apiGetWorkspace,
@@ -35,6 +35,7 @@ export default function TTScorerScreen() {
   const { token }              = useAuthStore();
 
   const [match,       setMatch]       = useState<any>(null);
+  const [sportConfig, setSportConfig] = useState<any>(null);
   const [loading,     setLoading]     = useState(true);
   const [firstServer, setFirstServer] = useState<1 | 2>(1);
   const [pendingSet,  setPendingSet]  = useState<any>(null);
@@ -49,6 +50,7 @@ export default function TTScorerScreen() {
       const ev = (ws.events ?? []).find((e: any) =>
         e.event_id === parseInt(params.eventId ?? '0')
       );
+      if (ev?.sport_config) setSportConfig(ev.sport_config);
       const m = (ev?.matches ?? []).find((m: any) => m.match_id === parseInt(matchId));
       if (m) {
         setMatch(m);
@@ -58,7 +60,7 @@ export default function TTScorerScreen() {
     setLoading(false);
   }, [matchId, params.tournamentId, params.eventId, token]);
 
-  useEffect(() => { loadMatch(); }, [loadMatch]);
+  useFocusEffect(useCallback(() => { loadMatch(); }, [loadMatch]));
 
   // ── Derived ───────────────────────────────────────────────────
   if (loading) {
@@ -84,7 +86,7 @@ export default function TTScorerScreen() {
   const currentSet    = sets.find((s: any) => !s.is_complete) ?? sets[sets.length - 1];
   const isDone        = match.status === 'done';
   const isPreLive     = match.status === 'scheduled';
-  const config        = match.sport_config ?? {};
+  const config        = sportConfig ?? {};
 
   const setsToWin = match.live_state?.sets_to_win ?? config?.sets_to_win ?? 2;
   const totalSets = setsToWin * 2 - 1;

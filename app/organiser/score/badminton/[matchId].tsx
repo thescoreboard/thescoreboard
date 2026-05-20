@@ -36,6 +36,7 @@ export default function BadmintonScorerScreen() {
   const { token }    = useAuthStore();
 
   const [match,       setMatch]      = useState<any>(null);
+  const [sportConfig, setSportConfig] = useState<any>(null);
   const [loading,     setLoading]    = useState(true);
   const [walkoverVis, setWalkoverVis] = useState(false);
   const [submitting,  setSubmitting]  = useState(false);
@@ -45,6 +46,7 @@ export default function BadmintonScorerScreen() {
     try {
       const ws = await apiGetWorkspace(token!, parseInt(params.tournamentId));
       const ev = (ws.events ?? []).find((e: any) => e.event_id === parseInt(params.eventId ?? '0'));
+      if (ev?.sport_config) setSportConfig(ev.sport_config);
       const m  = (ev?.matches ?? []).find((m: any) => m.match_id === parseInt(matchId));
       if (m) setMatch(m);
     } catch {}
@@ -71,7 +73,7 @@ export default function BadmintonScorerScreen() {
   const currentSet = sets.find((s: any) => !s.is_complete) ?? sets[sets.length - 1];
   const isDone     = match.status === 'done';
   const isPreLive  = match.status === 'scheduled';
-  const config     = match.sport_config ?? {};
+  const config     = sportConfig ?? {};
 
   const pts     = config.points_per_set ?? 21;
   const margin  = config.win_margin     ?? 2;

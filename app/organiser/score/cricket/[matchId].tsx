@@ -78,6 +78,7 @@ export default function CricketScorerScreen() {
   const { token }   = useAuthStore();
 
   const [match,        setMatch]        = useState<any>(null);
+  const [sportConfig,  setSportConfig]  = useState<any>(null);
   const [loading,      setLoading]      = useState(true);
   const [setupBatFirst, setSetupBatFirst] = useState<1 | 2>(1);
   const [showWicket,   setShowWicket]   = useState(false);
@@ -92,6 +93,7 @@ export default function CricketScorerScreen() {
     try {
       const ws = await apiGetWorkspace(token!, parseInt(params.tournamentId));
       const ev = (ws.events ?? []).find((e: any) => e.event_id === parseInt(params.eventId ?? '0'));
+      if (ev?.sport_config) setSportConfig(ev.sport_config);
       const m  = (ev?.matches ?? []).find((m: any) => m.match_id === parseInt(matchId));
       if (m) {
         setMatch(m);
@@ -125,7 +127,7 @@ export default function CricketScorerScreen() {
   const innings   = ls.current_innings ?? 1;
 
   const isSuperOver      = !!(ls.is_super_over) || innings >= 3;
-  const config           = match.sport_config ?? {};
+  const config           = sportConfig ?? {};
   const maxOvers         = isSuperOver ? 1 : (ls.configured_overs ?? config.overs ?? 20);
   const maxWickets       = isSuperOver ? 2 : (ls.configured_wickets ?? config.wickets ?? 10);
   const battingFirst     = ls.batting_first ?? null;
@@ -286,7 +288,7 @@ export default function CricketScorerScreen() {
               ))}
             </View>
             {isPreLive ? (
-              <TouchableOpacity onPress={async () => { await handleGoLive(); confirmSetup(); }}
+              <TouchableOpacity onPress={async () => { await handleGoLive(); await confirmSetup(); }}
                 style={{ width: '100%', paddingVertical: 18, borderRadius: 12, alignItems: 'center', backgroundColor: C.green }}>
                 <Text style={{ fontSize: 16, fontWeight: '900', color: '#000', letterSpacing: 1, textTransform: 'uppercase' }}>
                   ▶ GO LIVE
@@ -381,7 +383,7 @@ export default function CricketScorerScreen() {
                   Inn {s.set_number}: {name}
                 </Text>
                 <Text style={{ color: C.lime, fontWeight: '900', fontSize: 12 }}>
-                  {s.score_p1}/{s.score_p2} ({s.score_p2 >= maxWickets ? 'all out' : fmt(s.score_p1 * 6 ?? 0)})
+                  {s.score_p1}/{s.score_p2}{s.score_p2 >= maxWickets ? ' (all out)' : ''}
                 </Text>
               </View>
             );

@@ -73,8 +73,33 @@ export default function RegisterScreen() {
 
   const participantType = selectedEvent?.participant_type ?? 'individual';
 
+  // Ensure doubles_pair always has exactly 2 member slots pre-filled
+  React.useEffect(() => {
+    if (participantType === 'doubles_pair' && members.length < 2) {
+      setMembers(prev => {
+        const next = [...prev];
+        while (next.length < 2) next.push({ name:'', role:'player', jersey_number:'', age:'' });
+        return next;
+      });
+    }
+  }, [participantType]);
+
   const handleSubmit = async () => {
     if (!selectedEvent) return;
+
+    // Validation
+    if (participantType === 'individual' && !name.trim()) {
+      return Alert.alert('Required', 'Please enter your full name.');
+    }
+    if (participantType === 'doubles_pair') {
+      if (!members[0]?.name?.trim() || !members[1]?.name?.trim()) {
+        return Alert.alert('Required', 'Please enter names for both partners.');
+      }
+    }
+    if (participantType === 'team' && !teamName.trim()) {
+      return Alert.alert('Required', 'Please enter a team name.');
+    }
+
     setSubmitting(true);
     try {
       if (participantType === 'individual') {
@@ -86,12 +111,12 @@ export default function RegisterScreen() {
       } else {
         const isDoubles = participantType === 'doubles_pair';
         await apiPublicRegisterTeam(tournament.tournament_id, {
-          name: isDoubles ? name : teamName,
+          name: isDoubles ? `${members[0]?.name?.trim()} / ${members[1]?.name?.trim()}` : teamName,
           contact_phone: phone.trim()||null,
           sport_key: selectedEvent.sport_key,
           ...(isDoubles ? { event_id: selectedEvent.event_id } : { event_ids: [selectedEvent.event_id] }),
           members: isDoubles
-            ? members.slice(0,2).map((m, i) => ({ name: m.name, role: i===0?'player1':'player2' }))
+            ? members.slice(0,2).map((m, i) => ({ name: m.name.trim(), role: i===0?'player1':'player2' }))
             : members.map(m => ({ name: m.name.trim(), role: m.role, jersey_number: parseInt(m.jersey_number)||null, age: parseInt(m.age)||null })),
         });
       }
@@ -172,6 +197,38 @@ export default function RegisterScreen() {
                       </TouchableOpacity>
                     ))}
                   </View>
+                </View>
+              </View>
+            )}
+
+            {participantType === 'doubles_pair' && (
+              <View style={{ gap:12 }}>
+                <Text style={{ fontSize:13, color:c.muted, marginBottom:4 }}>
+                  Enter both partners' names to register as a doubles pair.
+                </Text>
+                {[0, 1].map(i => (
+                  <View key={i}>
+                    <Text style={[s.label, { color:c.muted }]}>Partner {i + 1} Name *</Text>
+                    <TextInput
+                      style={[s.input, { backgroundColor:c.elevated, borderColor:c.border, color:c.ink }]}
+                      placeholder={i === 0 ? 'Rahul Sharma' : 'Priya Mehta'}
+                      placeholderTextColor={c.muted}
+                      value={members[i]?.name ?? ''}
+                      onChangeText={v => setMembers(prev => {
+                        const next = [...prev];
+                        // Ensure slot exists
+                        if (!next[i]) next[i] = { name:'', role:'player', jersey_number:'', age:'' };
+                        next[i] = { ...next[i], name: v };
+                        return next;
+                      })}
+                    />
+                  </View>
+                ))}
+                <View>
+                  <Text style={[s.label, { color:c.muted }]}>Contact Phone</Text>
+                  <TextInput style={[s.input, { backgroundColor:c.elevated, borderColor:c.border, color:c.ink }]}
+                    placeholder="9876543210" placeholderTextColor={c.muted}
+                    value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
                 </View>
               </View>
             )}

@@ -303,21 +303,29 @@ export default function TournamentPublicScreen() {
 
 function TeamsSection({ events, theme }: any) {
   const c = theme.colors;
-  const participants = events.flatMap((ev: any) => [
-    ...(ev.ungrouped_players ?? []),
-    ...(ev.groups ?? []).flatMap((g: any) => g.players ?? []),
-  ]);
+  // Public API returns ev.participants as a flat list; workspace API uses
+  // ev.ungrouped_players + ev.groups[].players — try both shapes.
+  const participants = events.flatMap((ev: any) =>
+    ev.participants
+      ? ev.participants
+      : [
+          ...(ev.ungrouped_players ?? []),
+          ...(ev.groups ?? []).flatMap((g: any) => g.players ?? []),
+        ]
+  );
   return (
     <ScrollView contentContainerStyle={{ padding:16 }}>
       {participants.length === 0
         ? <Text style={{ color:c.muted, textAlign:'center', marginTop:32 }}>No participants yet.</Text>
         : participants.map((p: any) => (
-          <View key={p.player_id ?? p.ep_id} style={{ flexDirection:'row', alignItems:'center', paddingVertical:10, borderBottomWidth:1, borderBottomColor:c.border }}>
+          <View key={p.id ?? p.player_id ?? p.ep_id} style={{ flexDirection:'row', alignItems:'center', paddingVertical:10, borderBottomWidth:1, borderBottomColor:c.border }}>
             <View style={{ width:36, height:36, borderRadius:18, backgroundColor:c.elevated, alignItems:'center', justifyContent:'center', marginRight:10 }}>
               <Text style={{ fontSize:14, fontWeight:'800', color:c.muted }}>{(p.name??'?')[0].toUpperCase()}</Text>
             </View>
             <Text style={{ fontSize:14, fontWeight:'600', color:c.ink }}>{p.name}</Text>
-            {p.seed_level && <Text style={{ marginLeft:'auto', fontSize:11, color:c.muted }}>{p.seed_level}</Text>}
+            {(p.group ?? p.seed_level) && (
+              <Text style={{ marginLeft:'auto', fontSize:11, color:c.muted }}>{p.group ?? p.seed_level}</Text>
+            )}
           </View>
         ))
       }

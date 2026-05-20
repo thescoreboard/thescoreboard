@@ -150,8 +150,8 @@ export const apiDeletePlayer  = (token: string, id: number) =>
   request('DELETE', `/players/${id}`, token);
 export const apiAddPlayerToEvent = (token: string, eId: number, pId: number, gId?: number, seed?: number) => {
   let url = `/players/events/${eId}/participants?player_id=${pId}`;
-  if (gId)   url += `&group_id=${gId}`;
-  if (seed)  url += `&seed=${seed}`;
+  if (gId)        url += `&group_id=${gId}`;
+  if (seed != null) url += `&seed=${seed}`;
   return request('POST', url, token);
 };
 export const apiRemovePlayerFromEvent = (token: string, eId: number, pId: number) =>
