@@ -2,7 +2,7 @@
  * Explore screen — browse tournaments by sport & status.
  * "All Sports" mode fetches all 4 sport pages in parallel and deduplicates.
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   TextInput, ActivityIndicator, RefreshControl,
@@ -35,7 +35,12 @@ export default function ExploreScreen() {
   const [loading,      setLoading]      = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
 
+  // Guard: prevent concurrent in-flight requests from stacking up
+  const isFetchingRef = useRef(false);
+
   const load = useCallback(async () => {
+    if (isFetchingRef.current) return;   // already in-flight — skip
+    isFetchingRef.current = true;
     try {
       if (!sport) {
         // All Sports: fetch every sport in parallel, merge + deduplicate
@@ -59,8 +64,11 @@ export default function ExploreScreen() {
         setData(res);
       }
     } catch {}
-    setLoading(false);
-    setRefreshing(false);
+    finally {
+      isFetchingRef.current = false;
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, [sport, cityFilter, search]);
 
   useEffect(() => { load(); }, [load]);

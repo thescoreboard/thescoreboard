@@ -11,16 +11,19 @@ function StatusBadge({ status, sportKey }: { status: string; sportKey?: string }
   const { theme } = useTheme();
   if (status === 'live') {
     return (
-      <View style={[sb.badge, { backgroundColor: theme.colors.primary + '22', borderColor: theme.colors.primary + '44' }]}>
+      <View style={[sb.badge, { backgroundColor: theme.colors.primary + '22', borderColor: theme.colors.primary + '55' }]}>
         <View style={[sb.dot, { backgroundColor: theme.colors.primary }]} />
         <Text style={[sb.text, { color: theme.colors.primary }]}>LIVE</Text>
       </View>
     );
   }
   if (status === 'done') {
-    const label = sportKey === 'football' ? 'FT' : sportKey === 'cricket' ? 'END' : 'END';
+    // "FT" for football, "END" for cricket, "DONE" for racket sports
+    const label = sportKey === 'football' ? 'FT'
+                : sportKey === 'cricket'  ? 'END'
+                : 'DONE';
     return (
-      <View style={[sb.badge, { backgroundColor: '#16a34a22', borderColor: '#16a34a44' }]}>
+      <View style={[sb.badge, { backgroundColor: '#16a34a18', borderColor: '#16a34a55' }]}>
         <Text style={[sb.text, { color: '#16a34a' }]}>{label}</Text>
       </View>
     );
@@ -28,9 +31,9 @@ function StatusBadge({ status, sportKey }: { status: string; sportKey?: string }
   return null;
 }
 const sb = StyleSheet.create({
-  badge: { flexDirection:'row', alignItems:'center', borderRadius: 999, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3, gap: 4 },
+  badge: { flexDirection:'row', alignItems:'center', borderRadius: 999, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 3, gap: 4 },
   dot:   { width: 6, height: 6, borderRadius: 3 },
-  text:  { fontSize: 10, fontWeight: '800' },
+  text:  { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
 });
 
 // ── Default (TT / Badminton) ─────────────────────────────────────
@@ -69,17 +72,44 @@ function FootballCard({ m, theme }: any) {
   const half = ls.half;
   let phaseLabel = half >= 5 ? 'Penalties' : half >= 3 ? 'Extra Time' : half === 2 ? '2nd Half' : '1st Half';
   if (m.status !== 'live') phaseLabel = '';
+
+  // Score: use first set if available, fall back to participant aggregate
   const set = m.sets?.[0];
-  const g1 = set?.score_p1 ?? 0;
-  const g2 = set?.score_p2 ?? 0;
+  const g1 = set?.score_p1 ?? m.player_1?.score ?? 0;
+  const g2 = set?.score_p2 ?? m.player_2?.score ?? 0;
+
+  const isDone = m.status === 'done';
+  const p1win  = m.player_1?.is_winner;
+  const p2win  = m.player_2?.is_winner;
+  const scoreColor = m.status === 'live' ? theme.colors.primary : theme.colors.ink;
+
   return (
-    <View style={{ alignItems: 'center' }}>
+    <View>
       <View style={mc.ftRow}>
-        <Text style={[mc.ftName, { color: theme.colors.ink }]} numberOfLines={1}>{m.player_1?.name ?? 'TBD'}</Text>
-        <Text style={[mc.ftScore, { color: theme.colors.ink }]}>{g1} – {g2}</Text>
-        <Text style={[mc.ftName, { color: theme.colors.ink, textAlign:'right' }]} numberOfLines={1}>{m.player_2?.name ?? 'TBD'}</Text>
+        <Text
+          style={[mc.ftName, {
+            color: isDone && !p1win ? theme.colors.muted : theme.colors.ink,
+            fontWeight: isDone && p1win ? '800' : '600',
+          }]}
+          numberOfLines={1}
+        >
+          {m.player_1?.name ?? 'TBD'}
+        </Text>
+        <Text style={[mc.ftScore, { color: scoreColor }]}>
+          {m.status === 'done' || m.status === 'live' ? `${g1} – ${g2}` : 'vs'}
+        </Text>
+        <Text
+          style={[mc.ftName, {
+            color: isDone && !p2win ? theme.colors.muted : theme.colors.ink,
+            fontWeight: isDone && p2win ? '800' : '600',
+            textAlign: 'right',
+          }]}
+          numberOfLines={1}
+        >
+          {m.player_2?.name ?? 'TBD'}
+        </Text>
       </View>
-      {phaseLabel ? <Text style={{ fontSize: 11, color: theme.colors.muted, marginTop: 2 }}>{phaseLabel}</Text> : null}
+      {phaseLabel ? <Text style={{ fontSize: 11, color: theme.colors.muted, marginTop: 4, textAlign:'center' }}>{phaseLabel}</Text> : null}
     </View>
   );
 }
@@ -125,9 +155,9 @@ const mc = StyleSheet.create({
   score:   { fontSize: 20, fontWeight: '900', minWidth: 28, textAlign: 'right' },
   sets:    { flexDirection:'row', gap: 4, marginTop: 6, flexWrap:'wrap' },
   setChip: { borderWidth:1, borderRadius:6, paddingHorizontal:6, paddingVertical:2 },
-  ftRow:   { flexDirection:'row', alignItems:'center', gap: 8, width:'100%' },
-  ftName:  { flex:1, fontSize:14, fontWeight:'700' },
-  ftScore: { fontSize:22, fontWeight:'900', minWidth:70, textAlign:'center' },
+  ftRow:   { flexDirection:'row', alignItems:'center', gap: 6, width:'100%' },
+  ftName:  { flex:1, fontSize:14, fontWeight:'600' },
+  ftScore: { fontSize:24, fontWeight:'900', minWidth:72, textAlign:'center', letterSpacing:-0.5 },
 });
 
 // ── Main dispatcher ──────────────────────────────────────────────
@@ -160,7 +190,7 @@ export default function MatchCard({ match: m, sportKey, onPress }: Props) {
 }
 
 const s = StyleSheet.create({
-  card:   { borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 10 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  stage:  { fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  card:   { borderRadius: 12, borderWidth: 1, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 14, marginBottom: 10 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  stage:  { fontSize: 10, fontWeight: '800', letterSpacing: 1.2, textTransform: 'uppercase' },
 });

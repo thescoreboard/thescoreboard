@@ -62,13 +62,20 @@ module.exports = {
       apiUrl: API_URL,
       wsUrl:  WS_URL,
       // ── YouTube / Google OAuth ───────────────────────────────────────────
-      // Create an OAuth 2.0 Android client in Google Cloud Console, then paste
-      // the client ID here.  Required for live streaming.
-      // Guide: https://console.cloud.google.com → APIs & Services → Credentials
+      // Two separate OAuth client IDs are required:
+      //   1. Android client (type: Android, package: in.thescoreboard.app)
+      //      → used on physical device / APK builds
+      //   2. Web client (type: Web application)
+      //      → used when running on web (localhost:8081 / thescoreboard.in)
+      //      Authorized redirect URIs to add in Google Cloud Console:
+      //        http://localhost:8081
+      //        https://thescoreboard.in
+      //
+      // Guide: console.cloud.google.com → APIs & Services → Credentials
       // Enable: YouTube Data API v3
       // OAuth consent screen scopes: .../auth/youtube
-      // Client type: Android, Package: in.thescoreboard.app
-      googleClientId: process.env.GOOGLE_CLIENT_ID || '876140482091-28svan5do1odatprdhn0jq8fmfca9hp9.apps.googleusercontent.com',
+      googleClientIdAndroid: process.env.GOOGLE_CLIENT_ID_ANDROID || '876140482091-28svan5do1odatprdhn0jq8fmfca9hp9.apps.googleusercontent.com',
+      googleClientIdWeb:     process.env.GOOGLE_CLIENT_ID_WEB     || '',
     },
   },
 };

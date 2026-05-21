@@ -9,7 +9,7 @@ import {
   Alert, ActivityIndicator, RefreshControl, Modal, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { useTheme } from '../../../../../src/hooks/useTheme';
 import { useAuthStore } from '../../../../../src/store/auth';
 import {
@@ -321,10 +321,15 @@ function MatchRow({
     if (match.pair2_name)     return match.pair2_name;
     return 'TBD';
   };
-  const scoreStr = (match: any) =>
-    (match.status === 'done' || match.status === 'live')
-      ? `${match.score_p1 ?? 0} – ${match.score_p2 ?? 0}`
-      : 'vs';
+  const scoreStr = (match: any) => {
+    if (match.status !== 'done' && match.status !== 'live') return 'vs';
+    // The workspace API nests scores inside player_1.score / player_2.score
+    // (from MatchParticipant.score). match.score_p1 is never emitted by
+    // _serialize_match, so always fell back to 0. Read from the right field.
+    const s1 = match.player_1?.score ?? match.score_p1 ?? 0;
+    const s2 = match.player_2?.score ?? match.score_p2 ?? 0;
+    return `${s1} – ${s2}`;
+  };
 
   return (
     <View style={{ backgroundColor: c.surface, borderRadius: 12, borderWidth: 1,
@@ -453,7 +458,10 @@ export default function EventWorkspaceScreen() {
     catch {}
   }, [eventId, token]);
 
-  useEffect(() => { load(); }, [load]);
+  // useFocusEffect re-runs every time this screen comes into focus —
+  // including when the user navigates back from the scorer screen.
+  // This means scores are always up-to-date without requiring a manual refresh.
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   useEffect(() => {
     if (!data) return;

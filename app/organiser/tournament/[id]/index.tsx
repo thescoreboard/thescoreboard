@@ -41,7 +41,39 @@ export default function TournamentOverviewScreen() {
   const [transitioning, setTransitioning] = useState(false);
   const [flash,       setFlash]       = useState('');
   const [editingInfo, setEditingInfo] = useState(false);
-  const [infoForm,    setInfoForm]    = useState({ overview: '', rules: '', prize_pool: '', contact: '' });
+  const [infoForm,    setInfoForm]    = useState<{
+    overview:   string;
+    rules:      string;
+    prize_pool: Array<{ category: string; position: string; amount: string }>;
+    contact: {
+      entry_fee:    string;
+      reg_deadline: string;
+      persons:      Array<{ name: string; phone: string }>;
+    };
+  }>({
+    overview:   '',
+    rules:      '',
+    prize_pool: [],
+    contact: { entry_fee: '', reg_deadline: '', persons: [] },
+  });
+
+  const POSITIONS = ['1st Place', '2nd Place', '3rd Place', 'Runner Up'];
+
+  // ── Prize pool helpers ──────────────────────────────────────
+  const addPrize   = () => setInfoForm(p => ({ ...p, prize_pool: [...p.prize_pool, { category: '', position: '1st Place', amount: '' }] }));
+  const updatePrize = (i: number, field: string, val: string) =>
+    setInfoForm(p => ({ ...p, prize_pool: p.prize_pool.map((x, j) => j === i ? { ...x, [field]: val } : x) }));
+  const removePrize = (i: number) =>
+    setInfoForm(p => ({ ...p, prize_pool: p.prize_pool.filter((_, j) => j !== i) }));
+
+  // ── Contact helpers ─────────────────────────────────────────
+  const setContact = (key: string, val: string) =>
+    setInfoForm(p => ({ ...p, contact: { ...p.contact, [key]: val } }));
+  const addPerson   = () => setInfoForm(p => ({ ...p, contact: { ...p.contact, persons: [...p.contact.persons, { name: '', phone: '' }] } }));
+  const updatePerson = (i: number, field: string, val: string) =>
+    setInfoForm(p => ({ ...p, contact: { ...p.contact, persons: p.contact.persons.map((x, j) => j === i ? { ...x, [field]: val } : x) } }));
+  const removePerson = (i: number) =>
+    setInfoForm(p => ({ ...p, contact: { ...p.contact, persons: p.contact.persons.filter((_, j) => j !== i) } }));
 
   const showFlash = (msg: string) => {
     setFlash(msg);
@@ -53,17 +85,15 @@ export default function TournamentOverviewScreen() {
       const ws = await apiGetWorkspace(token!, parseInt(id));
       setData(ws);
       const info = ws.tournament?.tournament_info ?? {};
-      // prize_pool is an array [{category,position,amount}], contact is an object
-      // — stringify them so they're safe to store in string-typed form state
       setInfoForm({
         overview:   typeof info.overview === 'string' ? info.overview : '',
         rules:      typeof info.rules    === 'string' ? info.rules    : '',
-        prize_pool: info.prize_pool
-          ? (typeof info.prize_pool === 'string' ? info.prize_pool : JSON.stringify(info.prize_pool))
-          : '',
-        contact: info.contact
-          ? (typeof info.contact === 'string' ? info.contact : JSON.stringify(info.contact))
-          : '',
+        prize_pool: Array.isArray(info.prize_pool) ? info.prize_pool : [],
+        contact: {
+          entry_fee:    info.contact?.entry_fee    ?? '',
+          reg_deadline: info.contact?.reg_deadline ?? '',
+          persons:      Array.isArray(info.contact?.persons) ? info.contact.persons : [],
+        },
       });
     } catch (e: any) {
       Alert.alert('Error', e.message);
@@ -99,15 +129,13 @@ export default function TournamentOverviewScreen() {
 
   const handleSaveInfo = async () => {
     try {
-      // prize_pool and contact are stored as JSON strings in the form;
-      // parse them back to structured objects before sending to the API.
-      const tryParse = (v: string) => { try { return JSON.parse(v); } catch { return v || undefined; } };
+      const hasContact = infoForm.contact.entry_fee || infoForm.contact.reg_deadline || infoForm.contact.persons.length > 0;
       await apiUpdateTournament(token!, data.tournament.org_id, parseInt(id), {
         tournament_info: {
-          overview:   infoForm.overview   || undefined,
-          rules:      infoForm.rules      || undefined,
-          prize_pool: infoForm.prize_pool ? tryParse(infoForm.prize_pool) : undefined,
-          contact:    infoForm.contact    ? tryParse(infoForm.contact)    : undefined,
+          overview:   infoForm.overview          || undefined,
+          rules:      infoForm.rules             || undefined,
+          prize_pool: infoForm.prize_pool.length > 0 ? infoForm.prize_pool : undefined,
+          contact:    hasContact ? infoForm.contact : undefined,
         },
       });
       showFlash('Info saved!');
@@ -344,98 +372,249 @@ export default function TournamentOverviewScreen() {
           </View>
 
           {editingInfo ? (
-            <View style={{ gap: 12 }}>
-              {([
-                { key: 'overview',   label: 'Overview' },
-                { key: 'rules',      label: 'Rules' },
-                { key: 'prize_pool', label: 'Prize Pool' },
-                { key: 'contact',    label: 'Contact' },
-              ] as const).map(f => (
-                <View key={f.key}>
+            <View style={{ gap: 16 }}>
+
+              {/* ── Overview ── */}
+              <View>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: c.muted,
+                  textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Overview</Text>
+                <TextInput
+                  style={{ backgroundColor: c.elevated, borderRadius: 10, borderWidth: 1, borderColor: c.border,
+                    color: c.ink, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14,
+                    minHeight: 80, textAlignVertical: 'top' }}
+                  value={infoForm.overview}
+                  onChangeText={v => setInfoForm(p => ({ ...p, overview: v }))}
+                  multiline
+                  placeholder="Brief description of the tournament…"
+                  placeholderTextColor={c.muted}
+                />
+              </View>
+
+              {/* ── Prize Pool ── */}
+              <View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                   <Text style={{ fontSize: 11, fontWeight: '700', color: c.muted,
-                    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>{f.label}</Text>
-                  <TextInput
-                    style={{ backgroundColor: c.elevated, borderRadius: 10, borderWidth: 1, borderColor: c.border,
-                      color: c.ink, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14,
-                      minHeight: 70, textAlignVertical: 'top' }}
-                    value={infoForm[f.key]}
-                    onChangeText={v => setInfoForm(prev => ({ ...prev, [f.key]: v }))}
-                    multiline
-                    placeholder={f.label}
-                    placeholderTextColor={c.muted}
-                  />
+                    textTransform: 'uppercase', letterSpacing: 0.5 }}>Prize Pool</Text>
+                  <TouchableOpacity onPress={addPrize}
+                    style={{ borderRadius: 8, borderWidth: 1.5, borderColor: c.primary,
+                      paddingHorizontal: 12, paddingVertical: 5 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: c.primary }}>+ Add Prize</Text>
+                  </TouchableOpacity>
                 </View>
-              ))}
+
+                {infoForm.prize_pool.length === 0 && (
+                  <Text style={{ fontSize: 13, color: c.muted, fontStyle: 'italic' }}>
+                    No prizes added yet.
+                  </Text>
+                )}
+
+                {infoForm.prize_pool.map((prize, i) => (
+                  <View key={i} style={{ backgroundColor: c.elevated, borderRadius: 10, borderWidth: 1,
+                    borderColor: c.border, padding: 12, marginBottom: 8, gap: 8 }}>
+
+                    {/* Category */}
+                    <TextInput
+                      style={{ borderRadius: 8, borderWidth: 1, borderColor: c.border,
+                        color: c.ink, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13,
+                        backgroundColor: c.surface }}
+                      value={prize.category}
+                      onChangeText={v => updatePrize(i, 'category', v)}
+                      placeholder="Category (e.g. Men's Singles)"
+                      placeholderTextColor={c.muted}
+                    />
+
+                    {/* Position pills — plain row/wrap to avoid nested ScrollView on web */}
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                      {POSITIONS.map(pos => (
+                        <TouchableOpacity key={pos} onPress={() => updatePrize(i, 'position', pos)}
+                          style={{ borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6,
+                            backgroundColor: prize.position === pos ? c.primary : 'transparent',
+                            borderWidth: 1.5, borderColor: prize.position === pos ? c.primary : c.border }}>
+                          <Text style={{ fontSize: 12, fontWeight: '700',
+                            color: prize.position === pos ? '#fff' : c.muted }}>{pos}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    {/* Amount + remove */}
+                    <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                      <TextInput
+                        style={{ flex: 1, borderRadius: 8, borderWidth: 1, borderColor: c.border,
+                          color: c.ink, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13,
+                          backgroundColor: c.surface }}
+                        value={prize.amount}
+                        onChangeText={v => updatePrize(i, 'amount', v)}
+                        placeholder="Amount (e.g. ₹5,000)"
+                        placeholderTextColor={c.muted}
+                        keyboardType="default"
+                      />
+                      <TouchableOpacity onPress={() => removePrize(i)}
+                        style={{ borderRadius: 8, borderWidth: 1, borderColor: '#ef444444',
+                          paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#ef444410' }}>
+                        <Text style={{ color: '#ef4444', fontSize: 13, fontWeight: '700' }}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </View>
+
+              {/* ── Rules ── */}
+              <View>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: c.muted,
+                  textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Rules</Text>
+                <TextInput
+                  style={{ backgroundColor: c.elevated, borderRadius: 10, borderWidth: 1, borderColor: c.border,
+                    color: c.ink, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14,
+                    minHeight: 80, textAlignVertical: 'top' }}
+                  value={infoForm.rules}
+                  onChangeText={v => setInfoForm(p => ({ ...p, rules: v }))}
+                  multiline
+                  placeholder="Tournament rules and format details…"
+                  placeholderTextColor={c.muted}
+                />
+              </View>
+
+              {/* ── Registration & Contact ── */}
+              <View>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: c.muted,
+                  textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Registration & Contact</Text>
+
+                {/* Entry fee */}
+                <Text style={{ fontSize: 12, color: c.muted, marginBottom: 4 }}>Entry Fee</Text>
+                <TextInput
+                  style={{ backgroundColor: c.elevated, borderRadius: 10, borderWidth: 1, borderColor: c.border,
+                    color: c.ink, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, marginBottom: 10 }}
+                  value={infoForm.contact.entry_fee}
+                  onChangeText={v => setContact('entry_fee', v)}
+                  placeholder="e.g. ₹200 per player"
+                  placeholderTextColor={c.muted}
+                />
+
+                {/* Reg deadline */}
+                <Text style={{ fontSize: 12, color: c.muted, marginBottom: 4 }}>Registration Deadline</Text>
+                <TextInput
+                  style={{ backgroundColor: c.elevated, borderRadius: 10, borderWidth: 1, borderColor: c.border,
+                    color: c.ink, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, marginBottom: 10 }}
+                  value={infoForm.contact.reg_deadline}
+                  onChangeText={v => setContact('reg_deadline', v)}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={c.muted}
+                />
+
+                {/* Contact persons */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Text style={{ fontSize: 12, color: c.muted }}>Contact Persons</Text>
+                  <TouchableOpacity onPress={addPerson}
+                    style={{ borderRadius: 8, borderWidth: 1.5, borderColor: c.primary,
+                      paddingHorizontal: 12, paddingVertical: 4 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: c.primary }}>+ Add</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {infoForm.contact.persons.length === 0 && (
+                  <Text style={{ fontSize: 13, color: c.muted, fontStyle: 'italic', marginBottom: 4 }}>
+                    No contact persons added.
+                  </Text>
+                )}
+
+                {infoForm.contact.persons.map((person, i) => (
+                  <View key={i} style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                    <TextInput
+                      style={{ flex: 1, backgroundColor: c.elevated, borderRadius: 8, borderWidth: 1,
+                        borderColor: c.border, color: c.ink, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13 }}
+                      value={person.name}
+                      onChangeText={v => updatePerson(i, 'name', v)}
+                      placeholder="Name"
+                      placeholderTextColor={c.muted}
+                    />
+                    <TextInput
+                      style={{ flex: 1, backgroundColor: c.elevated, borderRadius: 8, borderWidth: 1,
+                        borderColor: c.border, color: c.ink, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13 }}
+                      value={person.phone}
+                      onChangeText={v => updatePerson(i, 'phone', v)}
+                      placeholder="Phone"
+                      placeholderTextColor={c.muted}
+                      keyboardType="phone-pad"
+                    />
+                    <TouchableOpacity onPress={() => removePerson(i)}
+                      style={{ borderRadius: 8, borderWidth: 1, borderColor: '#ef444444',
+                        paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#ef444410' }}>
+                      <Text style={{ color: '#ef4444', fontSize: 13, fontWeight: '700' }}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+
+              {/* Save button */}
               <TouchableOpacity onPress={handleSaveInfo}
                 style={{ backgroundColor: c.primary, borderRadius: 10, paddingVertical: 13, alignItems: 'center' }}>
                 <Text style={{ fontFamily: F.display, color: '#fff', fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase' }}>Save Info</Text>
               </TouchableOpacity>
             </View>
           ) : (
-            <View style={{ gap: 10 }}>
+            <View style={{ gap: 12 }}>
               {/* Overview */}
               {!!infoForm.overview && (
                 <View>
-                  <Text style={{ fontSize: 10, fontWeight: '800', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>Overview</Text>
-                  <Text style={{ fontSize: 13, color: c.ink, marginTop: 3, lineHeight: 18 }}>{infoForm.overview}</Text>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>Overview</Text>
+                  <Text style={{ fontSize: 13, color: c.ink, lineHeight: 19 }}>{infoForm.overview}</Text>
                 </View>
               )}
+
+              {/* Prize Pool */}
+              {infoForm.prize_pool.length > 0 && (
+                <View>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Prize Pool</Text>
+                  {infoForm.prize_pool.map((p, i) => (
+                    <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                      paddingVertical: 6, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: c.border }}>
+                      <View>
+                        <Text style={{ fontSize: 13, color: c.ink, fontWeight: '600' }}>{p.position || '—'}</Text>
+                        {!!p.category && <Text style={{ fontSize: 11, color: c.muted, marginTop: 1 }}>{p.category}</Text>}
+                      </View>
+                      {!!p.amount && (
+                        <Text style={{ fontSize: 14, color: c.primary, fontWeight: '800' }}>{p.amount}</Text>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              )}
+
               {/* Rules */}
               {!!infoForm.rules && (
                 <View>
-                  <Text style={{ fontSize: 10, fontWeight: '800', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>Rules</Text>
-                  <Text style={{ fontSize: 13, color: c.ink, marginTop: 3, lineHeight: 18 }}>{infoForm.rules}</Text>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>Rules</Text>
+                  <Text style={{ fontSize: 13, color: c.ink, lineHeight: 19 }}>{infoForm.rules}</Text>
                 </View>
               )}
-              {/* Prize Pool — parse JSON array [{category,position,amount}] */}
-              {!!infoForm.prize_pool && (() => {
-                try {
-                  const arr = JSON.parse(infoForm.prize_pool);
-                  if (Array.isArray(arr) && arr.length > 0) return (
-                    <View>
-                      <Text style={{ fontSize: 10, fontWeight: '800', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Prize Pool</Text>
-                      {arr.map((p: any, i: number) => (
-                        <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between',
-                          paddingVertical: 5, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: c.border }}>
-                          <Text style={{ fontSize: 13, color: c.muted }}>{p.category ?? ''} · {p.position ?? ''}</Text>
-                          <Text style={{ fontSize: 13, color: c.ink, fontWeight: '700' }}>{p.amount ?? ''}</Text>
-                        </View>
-                      ))}
+
+              {/* Registration & Contact */}
+              {(!!infoForm.contact.entry_fee || !!infoForm.contact.reg_deadline || infoForm.contact.persons.length > 0) && (
+                <View>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Registration & Contact</Text>
+                  {!!infoForm.contact.entry_fee && (
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text style={{ fontSize: 13, color: c.muted }}>Entry Fee</Text>
+                      <Text style={{ fontSize: 13, color: c.ink, fontWeight: '700' }}>{infoForm.contact.entry_fee}</Text>
                     </View>
-                  );
-                } catch {}
-                return (
-                  <View>
-                    <Text style={{ fontSize: 10, fontWeight: '800', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>Prize Pool</Text>
-                    <Text style={{ fontSize: 13, color: c.ink, marginTop: 3 }}>{infoForm.prize_pool}</Text>
-                  </View>
-                );
-              })()}
-              {/* Contact — parse JSON object {entry_fee,reg_deadline,persons} */}
-              {!!infoForm.contact && (() => {
-                try {
-                  const obj = JSON.parse(infoForm.contact);
-                  if (obj && typeof obj === 'object') return (
-                    <View>
-                      <Text style={{ fontSize: 10, fontWeight: '800', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Contact</Text>
-                      {!!obj.entry_fee    && <Text style={{ fontSize: 13, color: c.ink }}>Entry: {obj.entry_fee}</Text>}
-                      {!!obj.reg_deadline && <Text style={{ fontSize: 13, color: c.muted, marginTop: 2 }}>Deadline: {obj.reg_deadline}</Text>}
-                      {(obj.persons ?? []).map((p: any, i: number) => (
-                        <Text key={i} style={{ fontSize: 13, color: c.muted, marginTop: 2 }}>
-                          {p.name}{p.phone ? ` · ${p.phone}` : ''}
-                        </Text>
-                      ))}
+                  )}
+                  {!!infoForm.contact.reg_deadline && (
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text style={{ fontSize: 13, color: c.muted }}>Deadline</Text>
+                      <Text style={{ fontSize: 13, color: c.ink, fontWeight: '700' }}>{infoForm.contact.reg_deadline}</Text>
                     </View>
-                  );
-                } catch {}
-                return (
-                  <View>
-                    <Text style={{ fontSize: 10, fontWeight: '800', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>Contact</Text>
-                    <Text style={{ fontSize: 13, color: c.ink, marginTop: 3 }}>{infoForm.contact}</Text>
-                  </View>
-                );
-              })()}
-              {!Object.values(infoForm).some(Boolean) && (
+                  )}
+                  {infoForm.contact.persons.map((p, i) => (
+                    <Text key={i} style={{ fontSize: 13, color: c.muted, marginTop: 2 }}>
+                      {p.name}{p.phone ? ` · ${p.phone}` : ''}
+                    </Text>
+                  ))}
+                </View>
+              )}
+
+              {/* Empty state */}
+              {!infoForm.overview && !infoForm.rules && infoForm.prize_pool.length === 0 &&
+               !infoForm.contact.entry_fee && !infoForm.contact.reg_deadline && infoForm.contact.persons.length === 0 && (
                 <Text style={{ color: c.muted, fontSize: 13 }}>No info added yet. Tap Edit to add details.</Text>
               )}
             </View>

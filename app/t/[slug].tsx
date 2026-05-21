@@ -57,44 +57,69 @@ function FixturesSection({ events, sportKey }: any) {
   const upcoming   = allMatches.filter((m: any) => m.status !== 'done' && m.status !== 'live');
   const c = theme.colors;
 
-  if (allMatches.length === 0) return <Text style={{ color:c.muted, textAlign:'center', padding:32 }}>No fixtures yet.</Text>;
+  if (allMatches.length === 0) return (
+    <View style={{ flex:1, alignItems:'center', justifyContent:'center' }}>
+      <Text style={{ color:c.muted, fontSize:14, textAlign:'center', padding:32 }}>No fixtures yet.</Text>
+    </View>
+  );
+
+  // Stat cards — only show non-zero counts
+  const statItems = [
+    { label: 'TOTAL',    value: allMatches.length, color: c.ink },
+    ...(live.length    > 0 ? [{ label: 'LIVE',     value: live.length,    color: c.primary }] : []),
+    { label: 'DONE',     value: done.length,        color: '#16a34a' },
+    ...(upcoming.length > 0 ? [{ label: 'UPCOMING', value: upcoming.length, color: c.muted   }] : []),
+  ];
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16 }}>
-      {/* Stats row */}
-      <View style={{ flexDirection:'row', gap:10, marginBottom:16 }}>
-        {[['Total', allMatches.length, c.muted], ['Done', done.length, '#16a34a'], ['Live', live.length, c.primary], ['Upcoming', upcoming.length, c.muted]].map(([l,v,cl]) =>
-          (v as number) > 0 ? (
-            <View key={l as string} style={{ alignItems:'center', backgroundColor: c.elevated, borderRadius:10, padding:10, flex:1 }}>
-              <Text style={{ fontSize:20, fontWeight:'900', color: cl as string }}>{v as number}</Text>
-              <Text style={{ fontSize:10, color: c.muted, fontWeight:'600', textTransform:'uppercase' }}>{l as string}</Text>
-            </View>
-          ) : null
-        )}
+      {/* Stats bar */}
+      <View style={{ flexDirection:'row', gap:10, marginBottom:20 }}>
+        {statItems.map((s) => (
+          <View key={s.label} style={{
+            flex:1, alignItems:'center', justifyContent:'center',
+            backgroundColor: c.elevated, borderRadius:12,
+            paddingVertical:14, paddingHorizontal:8,
+            borderWidth:1, borderColor:c.border,
+          }}>
+            <Text style={{ fontSize:26, fontWeight:'900', color: s.color, lineHeight:28 }}>{s.value}</Text>
+            <Text style={{ fontSize:9, color: c.muted, fontWeight:'700', letterSpacing:1.5, marginTop:4, textTransform:'uppercase' }}>{s.label}</Text>
+          </View>
+        ))}
       </View>
 
+      {/* LIVE section — shown first when present */}
       {live.length > 0 && (
         <>
           <Text style={[fs.sectionLabel, { color: c.primary }]}>LIVE</Text>
           {live.map((m: any) => <MatchCard key={m.match_id} match={m} sportKey={sportKey} />)}
         </>
       )}
+
+      {/* UPCOMING */}
       {upcoming.length > 0 && (
         <>
-          <Text style={[fs.sectionLabel, { color: c.muted }]}>UPCOMING</Text>
+          <Text style={[fs.sectionLabel, { color: c.muted, marginTop: live.length > 0 ? 8 : 0 }]}>UPCOMING</Text>
           {upcoming.map((m: any) => <MatchCard key={m.match_id} match={m} sportKey={sportKey} />)}
         </>
       )}
+
+      {/* COMPLETED */}
       {done.length > 0 && (
         <>
-          <Text style={[fs.sectionLabel, { color: c.muted }]}>COMPLETED</Text>
+          <Text style={[fs.sectionLabel, { color: c.muted, marginTop: (live.length > 0 || upcoming.length > 0) ? 8 : 0 }]}>COMPLETED</Text>
           {done.map((m: any) => <MatchCard key={m.match_id} match={m} sportKey={sportKey} />)}
         </>
       )}
     </ScrollView>
   );
 }
-const fs = StyleSheet.create({ sectionLabel: { fontSize:10, fontWeight:'800', letterSpacing:1.5, marginBottom:6, marginTop:10 } });
+const fs = StyleSheet.create({
+  sectionLabel: {
+    fontSize: 10, fontWeight: '800', letterSpacing: 1.5,
+    marginBottom: 8, textTransform: 'uppercase',
+  },
+});
 
 // ── Standings section ─────────────────────────────────────────────
 function StandingsSection({ events }: any) {
@@ -188,13 +213,21 @@ export default function TournamentPublicScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab,  setActiveTab]  = useState('fixtures');
 
+  // Guard: skip poll tick if a fetch is already in-flight
+  const isFetchingRef = useRef(false);
+
   const load = useCallback(async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       const data = await apiGetTournamentBySlug(slug);
       setT(data);
     } catch {}
-    setLoading(false);
-    setRefreshing(false);
+    finally {
+      isFetchingRef.current = false;
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, [slug]);
 
   useEffect(() => { load(); }, [load]);

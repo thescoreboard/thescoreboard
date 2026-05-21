@@ -19,6 +19,7 @@
  */
 
 import { useState, useCallback } from 'react';
+import { Platform } from 'react-native';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import Constants from 'expo-constants';
@@ -106,8 +107,11 @@ export function useYouTubeStream() {
   });
 
   // ── Read client ID from app.config extra ─────────────────────────────────
-  const clientId: string =
-    (Constants.expoConfig?.extra?.googleClientId as string) ?? '';
+  // Android builds use the Android OAuth client; web uses the Web client.
+  const extra = Constants.expoConfig?.extra ?? {};
+  const clientId: string = Platform.OS === 'web'
+    ? ((extra.googleClientIdWeb     as string) ?? '')
+    : ((extra.googleClientIdAndroid as string) ?? '');
 
   // Build the auth request (implicit / token grant — no PKCE needed)
   const [request, response, promptAsync] = AuthSession.useAuthRequest(
@@ -128,7 +132,12 @@ export function useYouTubeStream() {
   // ── Sign in ───────────────────────────────────────────────────────────────
   const signIn = useCallback(async (): Promise<string | null> => {
     if (!clientId) {
-      setState(s => ({ ...s, phase: 'error', error: 'Google client ID not configured. See setup instructions.' }));
+      const which = Platform.OS === 'web' ? 'Web application' : 'Android';
+      setState(s => ({
+        ...s,
+        phase: 'error',
+        error: `Google OAuth client ID not configured for ${which}. Add googleClientId${Platform.OS === 'web' ? 'Web' : 'Android'} to app.config.js extra.`,
+      }));
       return null;
     }
     setState(s => ({ ...s, phase: 'signing-in', error: null }));

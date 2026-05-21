@@ -2,7 +2,7 @@
  * Home screen — mirrors Landing.jsx
  * Shows live count, sport grid, trending tournaments. Polls every 5s.
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   TextInput, RefreshControl, ActivityIndicator,
@@ -25,25 +25,39 @@ export default function HomeScreen() {
   const [refreshing,  setRefreshing]  = useState(false);
   const [search,      setSearch]      = useState('');
 
+  // Guard: skip the poll if a fetch is already in-flight
+  const isFetchingRef  = useRef(false);
+  // Debounce timer ref for search input
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const load = useCallback(async (q?: string) => {
+    if (isFetchingRef.current) return;   // already in-flight — skip
+    isFetchingRef.current = true;
     try {
       const res = await apiGetHomepage(q);
       setData(res);
     } catch {}
-    setLoading(false);
-    setRefreshing(false);
+    finally {
+      isFetchingRef.current = false;
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
+  // Poll every 15 s (was 5 s). Homepage data changes infrequently;
+  // the guard above also stops stacking if the server is slow.
   useEffect(() => {
-    const id = setInterval(() => load(search || undefined), 5000);
+    const id = setInterval(() => load(search || undefined), 15000);
     return () => clearInterval(id);
   }, [load, search]);
 
+  // Debounced search — wait 400 ms after the last keystroke before fetching
   const onSearch = (q: string) => {
     setSearch(q);
-    load(q || undefined);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => load(q || undefined), 400);
   };
 
   const c = theme.colors;
@@ -106,28 +120,59 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Sport grid */}
+        {/* Sport strips */}
         <View style={s.sectionHeader}>
           <Text style={[s.sectionTitle, { fontFamily: F.display, color: c.ink }]}>Browse by Sport</Text>
         </View>
-        <View style={s.sportGrid}>
+        <View style={{ paddingHorizontal: 16, gap: 8 }}>
           {SPORTS.map(sk => {
-            const sportData = sports.find((sp: any) => sp.sport_key === sk);
-            const liveCount = sportData?.live_count ?? 0;
-            const color = SPORT_COLORS[sk] ?? '#888';
+            const sportData  = sports.find((sp: any) => sp.sport_key === sk);
+            const liveCount  = sportData?.live_count ?? 0;
+            const tournCount = sportData?.tournament_count ?? 0;
+            const color      = SPORT_COLORS[sk] ?? '#888';
             return (
               <TouchableOpacity
                 key={sk}
                 onPress={() => router.push(`/explore?sport=${sk}`)}
-                style={[s.sportCard, { backgroundColor: color + '15', borderColor: color + '33', borderTopColor: color }]}
                 activeOpacity={0.8}
+                style={{
+                  flexDirection: 'row', alignItems: 'center',
+                  borderRadius: 10, overflow: 'hidden',
+                  backgroundColor: color + '0d',
+                  borderWidth: 1.5, borderColor: color + '28',
+                  minHeight: 64,
+                }}
               >
-                <Text style={[s.sportName, { fontFamily: F.bold, color }]}>{SPORT_LABELS[sk]}</Text>
-                {liveCount > 0 && (
-                  <View style={[s.sportLive, { backgroundColor: color + '22' }]}>
-                    <Text style={[s.sportLiveText, { fontFamily: F.bold, color }]}>{liveCount} live</Text>
+                {/* Left accent bar */}
+                <View style={{ width: 5, alignSelf: 'stretch', backgroundColor: color }} />
+
+                {/* Text */}
+                <View style={{ flex: 1, paddingHorizontal: 14, paddingVertical: 12 }}>
+                  <Text style={{
+                    fontFamily: F.display, fontSize: 16, fontWeight: '900',
+                    textTransform: 'uppercase', letterSpacing: -0.4, color: c.ink, lineHeight: 19,
+                  }}>
+                    {SPORT_LABELS[sk]}
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 5 }}>
+                    <View style={{ backgroundColor: c.elevated, borderRadius: 4, paddingHorizontal: 7, paddingVertical: 2 }}>
+                      <Text style={{ fontSize: 10, fontWeight: '700', color: c.muted }}>
+                        {tournCount > 0 ? `${tournCount} tournament${tournCount !== 1 ? 's' : ''}` : 'Coming soon'}
+                      </Text>
+                    </View>
+                    {liveCount > 0 && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color }} />
+                        <Text style={{ fontSize: 10, fontWeight: '800', color, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                          {liveCount} live
+                        </Text>
+                      </View>
+                    )}
                   </View>
-                )}
+                </View>
+
+                {/* Arrow */}
+                <Text style={{ paddingHorizontal: 14, fontSize: 16, color, opacity: 0.7, fontWeight: '900' }}>→</Text>
               </TouchableOpacity>
             );
           })}
@@ -170,10 +215,5 @@ const s = StyleSheet.create({
   liveBannerText:  { fontSize: 13, fontWeight: '700' },
   sectionHeader:   { paddingHorizontal: 16, paddingTop: 18, paddingBottom: 10 },
   sectionTitle:    { fontSize: 14, fontWeight: '900', letterSpacing: -0.3 },
-  sportGrid:       { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12, gap: 8 },
-  sportCard:       { flex: 1, minWidth: '45%', borderRadius: 12, borderWidth: 1.5, borderTopWidth: 3, padding: 16, alignItems: 'center', gap: 8 },
-  sportName:       { fontSize: 12, fontWeight: '700', textAlign: 'center' },
-  sportLive:       { borderRadius: 4, paddingHorizontal: 8, paddingVertical: 3 },
-  sportLiveText:   { fontSize: 10, fontWeight: '700' },
   listPad:         { paddingHorizontal: 16 },
 });

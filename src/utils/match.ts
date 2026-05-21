@@ -16,16 +16,17 @@ export function formatOvers(balls: number): string {
 }
 
 export const STAGE_ORDER = [
-  'group', 'preliminary', 'round_of_32', 'round_of_16', 'quarter', 'semi', 'final', '3rd_place',
+  'group', 'preliminary', 'round_of_32', 'round_of_16', 'quarter', 'semi', 'final', 'third_place',
 ];
 
 export const STAGE_LABELS: Record<string, string> = {
-  group:       'Group Stage',
-  preliminary: 'Round 1',
-  round_of_32: 'R32',
-  round_of_16: 'R16',
-  quarter:     'Quarter Final',
-  semi:        'Semi Final',
-  final:       'Final',
-  '3rd_place': '3rd Place',
+  group:        'Group Stage',
+  preliminary:  'Round 1',
+  round_of_32:  'R32',
+  round_of_16:  'R16',
+  quarter:      'Quarter Final',
+  semi:         'Semi Final',
+  final:        'Final',
+  third_place:  '3rd Place',   // backend stores "third_place" (underscore, no digit-dash)
+  '3rd_place':  '3rd Place',   // legacy alias — keep for any old data
 };
