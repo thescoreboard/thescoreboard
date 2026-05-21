@@ -38,28 +38,49 @@ const sb = StyleSheet.create({
 
 // ── Default (TT / Badminton) ─────────────────────────────────────
 function DefaultCard({ m, theme }: any) {
-  const sets = (m.sets ?? []).filter((s: any) => s.score_p1 > 0 || s.score_p2 > 0 || s.is_complete);
+  const isLive = m.status === 'live';
+  const allSets = [...(m.sets ?? [])].sort((a: any, b: any) => a.set_number - b.set_number);
+  // Show completed sets + the current active set (for live matches)
+  const sets = allSets.filter((s: any) => s.is_complete || (isLive && !s.is_complete));
+
   return (
     <View>
       <View style={mc.row}>
         <Text style={[mc.pName, { color: m.player_1?.is_winner ? theme.colors.ink : theme.colors.muted, fontWeight: m.player_1?.is_winner ? '800' : '600' }]} numberOfLines={1}>
           {m.player_1?.name ?? 'TBD'}
         </Text>
-        <Text style={[mc.score, { color: theme.colors.ink }]}>{m.player_1?.score ?? 0}</Text>
+        <Text style={[mc.score, { color: m.player_1?.is_winner ? '#facc15' : theme.colors.ink }]}>
+          {m.player_1?.score ?? 0}
+        </Text>
       </View>
       <View style={mc.row}>
         <Text style={[mc.pName, { color: m.player_2?.is_winner ? theme.colors.ink : theme.colors.muted, fontWeight: m.player_2?.is_winner ? '800' : '600' }]} numberOfLines={1}>
           {m.player_2?.name ?? 'TBD'}
         </Text>
-        <Text style={[mc.score, { color: theme.colors.ink }]}>{m.player_2?.score ?? 0}</Text>
+        <Text style={[mc.score, { color: m.player_2?.is_winner ? '#facc15' : theme.colors.ink }]}>
+          {m.player_2?.score ?? 0}
+        </Text>
       </View>
       {sets.length > 0 && (
         <View style={mc.sets}>
-          {sets.map((s: any, i: number) => (
-            <View key={i} style={[mc.setChip, { borderColor: theme.colors.border }]}>
-              <Text style={{ fontSize: 10, color: theme.colors.muted }}>{s.score_p1}–{s.score_p2}</Text>
-            </View>
-          ))}
+          {sets.map((s: any) => {
+            const complete = s.is_complete;
+            const p1Won    = s.winner === 1;
+            const active   = !complete && isLive;
+            return (
+              <View key={s.set_number} style={[mc.setChip, {
+                borderColor: active ? theme.colors.primary + '55' : theme.colors.border,
+                backgroundColor: active ? theme.colors.primary + '12' : 'transparent',
+              }]}>
+                <Text style={{
+                  fontSize: 10, fontWeight: '800',
+                  color: active ? theme.colors.primary : theme.colors.muted,
+                }}>
+                  S{s.set_number}: {s.score_p1}–{s.score_p2}
+                </Text>
+              </View>
+            );
+          })}
         </View>
       )}
     </View>

@@ -1,6 +1,7 @@
 import { Tabs } from 'expo-router';
 import { View, Text } from 'react-native';
 import { useTheme } from '../../src/hooks/useTheme';
+import { useAuthStore } from '../../src/store/auth';
 import { F } from '../../src/theme';
 
 function TabIcon({ label, focused, color }: { label: string; focused: boolean; color: string }) {
@@ -16,6 +17,8 @@ function TabIcon({ label, focused, color }: { label: string; focused: boolean; c
 
 export default function TabLayout() {
   const { theme } = useTheme();
+  const mode = useAuthStore(s => s.mode);
+  const isPlayer = mode === 'player';
 
   return (
     <Tabs
@@ -43,11 +46,11 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="organiser"
-        options={{ tabBarIcon: ({ color, focused }) => <TabIcon label="Organise" focused={focused} color={color} /> }}
+        options={{ tabBarIcon: ({ color, focused }) => <TabIcon label={isPlayer ? 'Matches' : 'Organise'} focused={focused} color={color} /> }}
       />
       <Tabs.Screen
         name="profile"
-        options={{ tabBarIcon: ({ color, focused }) => <TabIcon label="Profile"  focused={focused} color={color} /> }}
+        options={{ tabBarIcon: ({ color, focused }) => <TabIcon label={isPlayer ? 'Dashboard' : 'Profile'} focused={focused} color={color} /> }}
       />
     </Tabs>
   );

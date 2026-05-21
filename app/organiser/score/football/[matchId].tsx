@@ -59,6 +59,7 @@ export default function FootballScorerScreen() {
   const [penH2,      setPenH2]      = useState<string[]>([]);
   const [walkoverVis, setWalkoverVis] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [isPaused,   setIsPaused]   = useState(false);
 
   const loadMatch = useCallback(async () => {
     if (!params.tournamentId) return;
@@ -193,6 +194,24 @@ export default function FootballScorerScreen() {
     else if (penH1.length > 0)       setPenH1(prev => prev.slice(0, -1));
   };
 
+  const handleReset = () => {
+    Alert.alert(
+      'Reset Score',
+      'This will reset the score to 0 – 0. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset', style: 'destructive',
+          onPress: () => {
+            setGoals1(0);
+            setGoals2(0);
+            doScore(0, 0, half);
+          },
+        },
+      ]
+    );
+  };
+
   const handleWalkover = async (pos: 1 | 2) => {
     setWalkoverVis(false);
     try { await apiWalkoverMatch(token!, parseInt(matchId), pos); await loadMatch(); }
@@ -299,23 +318,53 @@ export default function FootballScorerScreen() {
             </TouchableOpacity>
           )}
 
+          {/* Paused banner */}
+          {isPaused && !isDone && !isPreLive && (
+            <View style={{ backgroundColor: C.orange + '18', borderRadius: 10, borderWidth: 1,
+              borderColor: C.orange + '55', paddingVertical: 10, alignItems: 'center' }}>
+              <Text style={{ color: C.orange, fontWeight: '900', fontSize: 12, letterSpacing: 2, textTransform: 'uppercase' }}>
+                ⏸  Match Paused
+              </Text>
+            </View>
+          )}
+
           {/* Goal buttons */}
           {!isDone && !isPreLive && phase !== 'penalties' && (
             <View style={{ flexDirection: 'row', gap: 10 }}>
               {([{ pos: 1, name: p1Name, goals: goals1 }, { pos: 2, name: p2Name, goals: goals2 }] as any[]).map(({ pos, name, goals }) => (
                 <View key={pos} style={{ flex: 1, gap: 6 }}>
-                  <TouchableOpacity onPress={() => addGoal(pos)} disabled={submitting}
+                  <TouchableOpacity onPress={() => addGoal(pos)} disabled={submitting || isPaused}
                     style={{ paddingVertical: 20, borderRadius: 12, alignItems: 'center',
-                      backgroundColor: C.orange, opacity: submitting ? 0.5 : 1 }}>
+                      backgroundColor: C.orange, opacity: (submitting || isPaused) ? 0.35 : 1 }}>
                     <Text style={{ fontSize: 15, fontWeight: '900', color: '#000' }}>GOAL</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => removeGoal(pos)} disabled={goals === 0 || submitting}
+                  <TouchableOpacity onPress={() => removeGoal(pos)} disabled={goals === 0 || submitting || isPaused}
                     style={{ paddingVertical: 9, borderRadius: 8, alignItems: 'center',
-                      borderWidth: 1, borderColor: C.border, opacity: goals === 0 ? 0.35 : 1 }}>
+                      borderWidth: 1, borderColor: C.border, opacity: (goals === 0 || isPaused) ? 0.35 : 1 }}>
                     <Text style={{ color: C.muted, fontSize: 12, fontWeight: '700' }}>↩ Undo</Text>
                   </TouchableOpacity>
                 </View>
               ))}
+            </View>
+          )}
+
+          {/* Pause + Reset */}
+          {!isDone && !isPreLive && (
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity onPress={() => setIsPaused(p => !p)}
+                style={{ flex: 1, paddingVertical: 11, borderRadius: 9, alignItems: 'center',
+                  borderWidth: 1,
+                  borderColor: isPaused ? C.green + '66' : C.orange + '55',
+                  backgroundColor: isPaused ? C.green + '15' : C.orange + '12' }}>
+                <Text style={{ color: isPaused ? C.green : C.orange, fontWeight: '700', fontSize: 13 }}>
+                  {isPaused ? '▶ Resume' : '⏸ Pause'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleReset} disabled={submitting}
+                style={{ flex: 1, paddingVertical: 11, borderRadius: 9, alignItems: 'center',
+                  borderWidth: 1, borderColor: C.red + '30', opacity: submitting ? 0.4 : 1 }}>
+                <Text style={{ color: C.red, fontWeight: '700', fontSize: 13 }}>↺ Reset Score</Text>
+              </TouchableOpacity>
             </View>
           )}
 

@@ -13,6 +13,7 @@ import { useTheme } from '../../../../src/hooks/useTheme';
 import { useAuthStore } from '../../../../src/store/auth';
 import {
   apiGetWorkspace, apiTransitionTournament, apiUpdateTournament, apiDeleteTournament,
+  shareUrl,
 } from '../../../../src/api/client';
 import { F, STATUS_LABELS, STATUS_COLORS } from '../../../../src/theme';
 
@@ -119,10 +120,11 @@ export default function TournamentOverviewScreen() {
 
   const handleShare = async () => {
     if (!data?.tournament?.slug) return;
+    const url = shareUrl.tournament(data.tournament.slug);
     try {
       await Share.share({
-        message: `${data.tournament.name} — Live on TheScoreBoard\nhttps://thescoreboard.in/t/${data.tournament.slug}`,
-        url: `https://thescoreboard.in/t/${data.tournament.slug}`,
+        title:   data.tournament.name,
+        message: `${data.tournament.name} — Live on TheScoreBoard\n${url}`,
       });
     } catch {}
   };

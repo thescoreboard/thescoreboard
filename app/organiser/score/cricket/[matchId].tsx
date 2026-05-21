@@ -86,6 +86,7 @@ export default function CricketScorerScreen() {
   const [showSOToss,   setShowSOToss]   = useState(false);
   const [soTossChoice, setSoTossChoice] = useState<1 | 2>(1);
   const [submitting,   setSubmitting]   = useState(false);
+  const [isPaused,     setIsPaused]     = useState(false);
   const [st, setSt] = useState({ runs: 0, wickets: 0, balls: 0, log: [] as string[] });
 
   const loadMatch = useCallback(async () => {
@@ -217,6 +218,24 @@ export default function CricketScorerScreen() {
   const handleGoLive = async () => {
     try { const u = await apiUpdateMatchStatus(token!, parseInt(matchId), { status: 'live' }); setMatch(u); }
     catch (e: any) { Alert.alert('Error', e.message); }
+  };
+
+  const handleReset = () => {
+    Alert.alert(
+      'Reset Innings',
+      'This will clear all runs, wickets, and ball log for the current innings. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset', style: 'destructive',
+          onPress: () => {
+            const next = { runs: 0, wickets: 0, balls: 0, log: [] as string[] };
+            setSt(next);
+            doScore(next);
+          },
+        },
+      ]
+    );
   };
 
   const confirmSetup = async () => {
@@ -451,40 +470,61 @@ export default function CricketScorerScreen() {
           {/* Scoring buttons */}
           {!isDone && (
             <>
+              {/* Paused banner */}
+              {isPaused && (
+                <View style={{ backgroundColor: C.orange + '18', borderRadius: 10, borderWidth: 1,
+                  borderColor: C.orange + '55', paddingVertical: 10, alignItems: 'center' }}>
+                  <Text style={{ color: C.orange, fontWeight: '900', fontSize: 12, letterSpacing: 2, textTransform: 'uppercase' }}>
+                    ⏸  Match Paused
+                  </Text>
+                </View>
+              )}
+
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {balls.map(b => {
-                  const isSpecial = b.label === '4' || b.label === '6';
-                  const isExtra   = b.label === 'Wd' || b.label === 'Nb';
+                  const isSpecial  = b.label === '4' || b.label === '6';
+                  const isExtra    = b.label === 'Wd' || b.label === 'Nb';
+                  const isDisabled = submitting || isPaused || canEndInnings;
                   return (
                     <TouchableOpacity key={b.label} onPress={() => deliver(b.label, b.runs, b.legal)}
-                      disabled={submitting}
+                      disabled={isDisabled}
                       style={{ borderRadius: 10, paddingVertical: 14, paddingHorizontal: 14, alignItems: 'center',
                         backgroundColor: isSpecial ? C.green + '33' : isExtra ? C.orange + '22' : C.surface,
                         borderWidth: 1.5,
                         borderColor: isSpecial ? C.green + '88' : isExtra ? C.orange + '66' : C.border,
-                        opacity: submitting ? 0.5 : 1, minWidth: 60 }}>
+                        opacity: isDisabled ? 0.35 : 1, minWidth: 60 }}>
                       <Text style={{ fontSize: 18, fontWeight: '900',
                         color: isSpecial ? C.lime : isExtra ? C.orange : C.ink }}>{b.label}</Text>
                     </TouchableOpacity>
                   );
                 })}
                 {/* Wicket */}
-                <TouchableOpacity onPress={() => setShowWicket(true)} disabled={submitting}
+                <TouchableOpacity onPress={() => setShowWicket(true)} disabled={submitting || isPaused || canEndInnings}
                   style={{ borderRadius: 10, paddingVertical: 14, paddingHorizontal: 18, alignItems: 'center',
                     backgroundColor: C.red + '22', borderWidth: 1.5, borderColor: C.red + '88',
-                    opacity: submitting ? 0.5 : 1 }}>
+                    opacity: (submitting || isPaused || canEndInnings) ? 0.35 : 1 }}>
                   <Text style={{ fontSize: 18, fontWeight: '900', color: C.red }}>W</Text>
                 </TouchableOpacity>
               </View>
 
-              {/* Undo + End Innings */}
+              {/* Pause / Undo / End Innings */}
               <View style={{ flexDirection: 'row', gap: 8 }}>
-                <TouchableOpacity onPress={undo} disabled={!st.log.length || submitting}
+                <TouchableOpacity onPress={() => setIsPaused(p => !p)}
+                  style={{ paddingVertical: 11, paddingHorizontal: 12, borderRadius: 9, alignItems: 'center',
+                    borderWidth: 1,
+                    borderColor: isPaused ? C.green + '66' : C.orange + '55',
+                    backgroundColor: isPaused ? C.green + '15' : C.orange + '12' }}>
+                  <Text style={{ color: isPaused ? C.green : C.orange, fontWeight: '700', fontSize: 12 }}>
+                    {isPaused ? '▶ Resume' : '⏸ Pause'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={undo} disabled={!st.log.length || submitting || isPaused}
                   style={{ flex: 1, paddingVertical: 11, borderRadius: 9, alignItems: 'center',
-                    borderWidth: 1, borderColor: C.border, opacity: !st.log.length ? 0.35 : 1 }}>
+                    borderWidth: 1, borderColor: C.border,
+                    opacity: (!st.log.length || isPaused) ? 0.35 : 1 }}>
                   <Text style={{ color: C.muted, fontWeight: '700', fontSize: 13 }}>↩ Undo</Text>
                 </TouchableOpacity>
-                {canEndInnings && (
+                {canEndInnings && !isPaused && (
                   <TouchableOpacity onPress={triggerEndInnings}
                     style={{ flex: 2, paddingVertical: 11, borderRadius: 9, alignItems: 'center',
                       backgroundColor: C.gold }}>
@@ -494,6 +534,13 @@ export default function CricketScorerScreen() {
                   </TouchableOpacity>
                 )}
               </View>
+
+              {/* Reset innings */}
+              <TouchableOpacity onPress={handleReset} disabled={submitting}
+                style={{ paddingVertical: 11, borderRadius: 9, alignItems: 'center',
+                  borderWidth: 1, borderColor: C.red + '30', opacity: submitting ? 0.4 : 1 }}>
+                <Text style={{ color: C.red, fontWeight: '700', fontSize: 13 }}>↺ Reset Innings</Text>
+              </TouchableOpacity>
             </>
           )}
 

@@ -214,6 +214,12 @@ export const apiRemoveTeamFromEvent = (token: string, eId: number, tId: number) 
 export const apiGetEventTeams = (token: string, eId: number) =>
   request('GET', `/events/${eId}/teams`, token);
 
+// ── Player history ──────────────────────────────────────────────
+export const apiGetMyTournaments = (token: string) =>
+  request('GET', '/auth/my-tournaments', token);
+export const apiGetMyStats       = (token: string) =>
+  request('GET', '/auth/my-stats',       token);
+
 // ── Public ──────────────────────────────────────────────────────
 export const apiGetHomepage       = (q?: string) =>
   request('GET', `/public/home${q ? `?q=${encodeURIComponent(q)}` : ''}`, null);
@@ -239,10 +245,22 @@ export const apiPublicRegisterIndividual = (tId: number, d: any) =>
 export const apiPublicRegisterTeam = (tId: number, d: any) =>
   request('POST', `/public/tournaments/${tId}/register-team`, null, d);
 
-// ── Share URLs (for native share sheet) ─────────────────────────
+// ── Share / OG base URL ──────────────────────────────────────────
+// The share endpoint lives on the backend and returns an HTML page with
+// full OG meta tags (og:title, og:image, twitter:card, etc.) so that
+// WhatsApp / Facebook / Twitter / Instagram all show rich link previews.
+//
+// In production this is always https://thescoreboard.in
+// In dev we strip /api from the API base to get the backend root.
+export const SHARE_BASE: string = !__DEV__
+  ? 'https://thescoreboard.in'
+  : BASE_URL.endsWith('/api')
+    ? BASE_URL.slice(0, -4)          // "http://192.168.x.x:8000/api" → "http://192.168.x.x:8000"
+    : BASE_URL;
+
 export const shareUrl = {
-  tournament: (slug: string) => `${BASE_URL.replace('/api', '')}/api/share/t/${slug}`,
-  match:      (matchId: number) => `${BASE_URL.replace('/api', '')}/api/share/m/${matchId}`,
+  tournament: (slug: string)      => `${SHARE_BASE}/api/share/t/${slug}`,
+  match:      (matchId: number)   => `${SHARE_BASE}/api/share/m/${matchId}`,
 };
 
 // ── Media upload (multipart) ─────────────────────────────────────

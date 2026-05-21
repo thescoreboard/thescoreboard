@@ -42,6 +42,7 @@ export default function TTScorerScreen() {
   const [walkoverVisible, setWalkoverVisible] = useState(false);
   const [baseSwap,    setBaseSwap]    = useState(false);
   const [submitting,  setSubmitting]  = useState(false);
+  const [isPaused,    setIsPaused]    = useState(false);
 
   const loadMatch = useCallback(async () => {
     if (!params.tournamentId) return;
@@ -88,8 +89,8 @@ export default function TTScorerScreen() {
   const isPreLive     = match.status === 'scheduled';
   const config        = sportConfig ?? {};
 
-  const setsToWin = match.live_state?.sets_to_win ?? config?.sets_to_win ?? 2;
-  const totalSets = setsToWin * 2 - 1;
+  const setsToWin = match.live_state?.sets_to_win ?? config?.sets_to_win ?? 3;  // 3 = backend TT default (best of 5)
+  const totalSets = Math.max(1, setsToWin * 2 - 1);
   const pts       = config?.points_per_set ?? 11;
   const margin    = config?.win_margin ?? 2;
   const deuceAt   = config?.deuce_starts_at ?? (pts - 1);
@@ -132,7 +133,7 @@ export default function TTScorerScreen() {
   const leftServing  = serving === leftPos;
   const rightServing = serving === rightPos;
 
-  // Set winner check
+  // Set winner check (first-to-pts)
   const checkSetWin = (ns1: number, ns2: number): 1 | 2 | null => {
     const d = ns1 >= deuceAt && ns2 >= deuceAt;
     if (d) {
@@ -145,7 +146,18 @@ export default function TTScorerScreen() {
     return null;
   };
 
-  const setWinner = checkSetWin(s1, s2);
+  // Instant-win check (e.g. 7-0 rule) — mirrors backend check_instant_win
+  const checkInstantWin = (ns1: number, ns2: number): 1 | 2 | null => {
+    const iw = config?.instant_win;
+    if (!iw?.enabled) return null;
+    const target = iw.score     ?? 7;
+    const opp    = iw.opponent_score ?? 0;
+    if (ns1 === target && ns2 === opp) return 1;
+    if (ns2 === target && ns1 === opp) return 2;
+    return null;
+  };
+
+  const setWinner = checkSetWin(s1, s2) ?? checkInstantWin(s1, s2);
   const matchWinner = isDone ? (p1?.is_winner ? 1 : p2?.is_winner ? 2 : null) : null;
 
   const canSwap = s1 === 0 && s2 === 0 &&
@@ -170,7 +182,7 @@ export default function TTScorerScreen() {
     if (isDone || setWinner || pendingSet || submitting) return;
     const ns1 = pos === 1 ? s1 + 1 : s1;
     const ns2 = pos === 2 ? s2 + 1 : s2;
-    const winner = checkSetWin(ns1, ns2);
+    const winner = checkSetWin(ns1, ns2) ?? checkInstantWin(ns1, ns2);
     if (winner) {
       const pSW1 = setsWon1 + (winner === 1 ? 1 : 0);
       const pSW2 = setsWon2 + (winner === 2 ? 1 : 0);
@@ -208,6 +220,20 @@ export default function TTScorerScreen() {
       const updated = await apiUndoSet(token!, parseInt(matchId));
       setMatch(updated);
     } catch (e: any) { Alert.alert('Error', e.message); }
+  };
+
+  const handleReset = () => {
+    Alert.alert(
+      'Reset Set',
+      'This will reset the current set score to 0 – 0. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset', style: 'destructive',
+          onPress: () => doScore(0, 0, serving),
+        },
+      ]
+    );
   };
 
   const handleWalkover = async (pos: 1 | 2) => {
@@ -410,6 +436,16 @@ export default function TTScorerScreen() {
             </View>
           )}
 
+          {/* Paused banner */}
+          {isPaused && !isDone && !isPreLive && (
+            <View style={{ backgroundColor: C.gold + '18', borderRadius: 10, borderWidth: 1,
+              borderColor: C.gold + '55', paddingVertical: 10, alignItems: 'center' }}>
+              <Text style={{ color: C.gold, fontWeight: '900', fontSize: 12, letterSpacing: 2, textTransform: 'uppercase' }}>
+                ⏸  Match Paused
+              </Text>
+            </View>
+          )}
+
           {/* Point buttons */}
           {!isDone && !isPreLive && (
             <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -417,7 +453,7 @@ export default function TTScorerScreen() {
                 { pos: leftPos,  score: leftScore,  serving: leftServing  },
                 { pos: rightPos, score: rightScore, serving: rightServing },
               ] as any[]).map(({ pos, score, serving: srv }) => {
-                const disabled = !!(setWinner || pendingSet || submitting);
+                const disabled = !!(setWinner || pendingSet || submitting || isPaused);
                 return (
                   <View key={pos} style={{ flex: 1, gap: 6 }}>
                     <TouchableOpacity onPress={() => addPoint(pos)} disabled={disabled}
@@ -430,15 +466,35 @@ export default function TTScorerScreen() {
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => undoPoint(pos)}
-                      disabled={score === 0 || !!pendingSet}
+                      disabled={score === 0 || !!pendingSet || isPaused}
                       style={{ paddingVertical: 9, borderRadius: 8, alignItems: 'center',
                         backgroundColor: 'transparent', borderWidth: 1, borderColor: C.border,
-                        opacity: score === 0 || pendingSet ? 0.35 : 1 }}>
+                        opacity: score === 0 || pendingSet || isPaused ? 0.35 : 1 }}>
                       <Text style={{ fontSize: 12, fontWeight: '700', color: C.muted }}>↩ Undo</Text>
                     </TouchableOpacity>
                   </View>
                 );
               })}
+            </View>
+          )}
+
+          {/* Pause + Reset */}
+          {!isDone && !isPreLive && !pendingSet && (
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity onPress={() => setIsPaused(p => !p)}
+                style={{ flex: 1, paddingVertical: 11, borderRadius: 9, alignItems: 'center',
+                  borderWidth: 1,
+                  borderColor: isPaused ? C.green + '66' : C.gold + '55',
+                  backgroundColor: isPaused ? C.green + '15' : C.gold + '10' }}>
+                <Text style={{ color: isPaused ? C.green : C.gold, fontWeight: '700', fontSize: 13 }}>
+                  {isPaused ? '▶ Resume' : '⏸ Pause'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleReset} disabled={submitting}
+                style={{ flex: 1, paddingVertical: 11, borderRadius: 9, alignItems: 'center',
+                  borderWidth: 1, borderColor: C.red + '30', opacity: submitting ? 0.4 : 1 }}>
+                <Text style={{ color: C.red, fontWeight: '700', fontSize: 13 }}>↺ Reset Set</Text>
+              </TouchableOpacity>
             </View>
           )}
 

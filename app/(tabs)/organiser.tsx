@@ -1,5 +1,7 @@
 /**
- * Organiser tab — entry point. Shows org dashboard or login prompt.
+ * Organiser tab — mode-aware:
+ *   player mode  → PlayerMatchesTab (registered tournaments)
+ *   organiser mode → existing org dashboard
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, RefreshControl } from 'react-native';
@@ -7,7 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../src/hooks/useTheme';
 import { useAuthStore } from '../../src/store/auth';
-import { apiGetDashboard, apiCreateOrg } from '../../src/api/client';
+import { apiGetDashboard, apiCreateOrg, apiGetMyTournaments } from '../../src/api/client';
 import { F, STATUS_COLORS, STATUS_LABELS, SPORT_COLORS, SPORT_LABELS } from '../../src/theme';
 
 const STATUS_ORDER = ['live','registration','fixtures','draft','completed'];
@@ -17,7 +19,151 @@ const STATUS_SHORT: Record<string,string> = {
   live: 'Live', registration: 'Open', fixtures: 'Fixtures', draft: 'Draft', completed: 'Done',
 };
 
-export default function OrganiserTab() {
+// ── Player Matches Tab ────────────────────────────────────────────────────────
+
+function PlayerMatchesTab() {
+  const { theme } = useTheme();
+  const router = useRouter();
+  const c = theme.colors;
+  const { token, isLoggedIn, setMode } = useAuthStore();
+
+  const [tournaments, setTournaments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!isLoggedIn() || !token) { setLoading(false); return; }
+    try {
+      const data = await apiGetMyTournaments(token);
+      setTournaments(Array.isArray(data) ? data : []);
+    } catch {}
+    setLoading(false);
+    setRefreshing(false);
+  }, [token]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (!isLoggedIn()) {
+    return (
+      <SafeAreaView style={{ flex:1, backgroundColor:c.bg }}>
+        <View style={{ flex:1, alignItems:'center', justifyContent:'center', gap:16, padding:32 }}>
+          <Text style={{ fontFamily:F.display, fontSize:32 }}>🏆</Text>
+          <Text style={{ fontFamily:F.display, fontSize:18, color:c.ink, textAlign:'center', letterSpacing:-0.5 }}>
+            My Tournaments
+          </Text>
+          <Text style={{ fontFamily:F.body, color:c.muted, textAlign:'center', lineHeight:20, fontSize:14 }}>
+            Sign in to see the tournaments you've registered for.
+          </Text>
+          <TouchableOpacity onPress={() => router.push('/(auth)/login')}
+            style={{ backgroundColor:c.primary, borderRadius:8, paddingVertical:14, paddingHorizontal:32, minHeight:48, alignItems:'center', justifyContent:'center' }}>
+            <Text style={{ fontFamily:F.display, color:'#fff', fontSize:12, letterSpacing:0.5, textTransform:'uppercase' }}>Sign In</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (loading) {
+    return <SafeAreaView style={{ flex:1, backgroundColor:c.bg }}><ActivityIndicator style={{ flex:1 }} color={c.primary} /></SafeAreaView>;
+  }
+
+  // Group by status bucket
+  const active    = tournaments.filter(t => t.status === 'live');
+  const upcoming  = tournaments.filter(t => ['registration','upcoming','fixtures'].includes(t.status));
+  const completed = tournaments.filter(t => t.status === 'completed');
+
+  function TournamentCard({ t }: { t: any }) {
+    const sport_color = SPORT_COLORS[t.sport_key] ?? '#888';
+    const status_color = STATUS_COLORS[t.status] ?? '#888';
+    return (
+      <TouchableOpacity
+        onPress={() => router.push(`/t/${t.slug}`)}
+        style={{ backgroundColor:c.surface, borderRadius:12, borderWidth:1.5,
+          borderColor: t.status==='live' ? c.primary+'44' : c.border,
+          borderLeftWidth:3, borderLeftColor: sport_color,
+          padding:14, marginBottom:10 }}
+        activeOpacity={0.8}>
+        <View style={{ flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
+          <View style={{ backgroundColor:sport_color+'18', borderRadius:6, paddingHorizontal:8, paddingVertical:3, borderWidth:1, borderColor:sport_color+'33' }}>
+            <Text style={{ fontFamily:F.bold, fontSize:10, color:sport_color, letterSpacing:0.3 }}>
+              {(SPORT_LABELS[t.sport_key] ?? t.sport_key ?? '').toUpperCase()}
+            </Text>
+          </View>
+          <View style={{ backgroundColor:status_color+'18', borderRadius:4, paddingHorizontal:8, paddingVertical:3, borderWidth:1, borderColor:status_color+'33' }}>
+            <Text style={{ fontFamily:F.bold, fontSize:10, color:status_color, letterSpacing:0.8 }}>
+              {(STATUS_LABELS[t.status] ?? t.status ?? '').toUpperCase()}
+            </Text>
+          </View>
+        </View>
+        <Text style={{ fontFamily:F.display, fontSize:14, color:c.ink, marginBottom:2, letterSpacing:-0.3 }} numberOfLines={1}>
+          {t.name}
+        </Text>
+        <Text style={{ fontFamily:F.body, fontSize:12, color:c.muted }}>{t.event_name}{t.city ? ` · ${t.city}` : ''}</Text>
+        {t.stage_reached && (
+          <View style={{ marginTop:8, flexDirection:'row', alignItems:'center', gap:6 }}>
+            <Text style={{ fontSize:12 }}>🏅</Text>
+            <Text style={{ fontFamily:F.bold, fontSize:12, color:c.primary }}>{t.stage_reached}</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  }
+
+  function Section({ title, items }: { title: string; items: any[] }) {
+    if (!items.length) return null;
+    return (
+      <View style={{ marginBottom:8 }}>
+        <Text style={{ fontFamily:F.bold, fontSize:11, color:c.muted, textTransform:'uppercase', letterSpacing:1, marginHorizontal:16, marginBottom:8, marginTop:8 }}>
+          {title}
+        </Text>
+        {items.map(t => <TournamentCard key={t.tournament_id} t={t} />)}
+      </View>
+    );
+  }
+
+  return (
+    <SafeAreaView style={{ flex:1, backgroundColor:c.bg }}>
+      {/* Header */}
+      <View style={{ flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingHorizontal:16, height:56, borderBottomWidth:1.5, borderBottomColor:c.border }}>
+        <Text style={{ fontFamily:F.display, fontSize:14, color:c.ink, letterSpacing:-0.3 }}>My Tournaments</Text>
+        <TouchableOpacity onPress={() => router.push('/explore')}
+          style={{ borderWidth:1.5, borderColor:c.border, borderRadius:8, paddingHorizontal:12, paddingVertical:7 }}>
+          <Text style={{ fontFamily:F.bold, fontSize:11, color:c.muted }}>Explore</Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={c.primary} />}
+      >
+        {tournaments.length === 0 ? (
+          <View style={{ alignItems:'center', justifyContent:'center', padding:48, gap:16 }}>
+            <Text style={{ fontSize:48 }}>🏆</Text>
+            <Text style={{ fontFamily:F.display, fontSize:16, color:c.ink, textAlign:'center', letterSpacing:-0.4 }}>
+              No tournaments yet
+            </Text>
+            <Text style={{ fontFamily:F.body, fontSize:14, color:c.muted, textAlign:'center', lineHeight:20 }}>
+              Register for a tournament to see it here.
+            </Text>
+            <TouchableOpacity onPress={() => router.push('/explore')}
+              style={{ backgroundColor:c.primary, borderRadius:8, paddingVertical:12, paddingHorizontal:28, marginTop:4 }}>
+              <Text style={{ fontFamily:F.display, color:'#fff', fontSize:12, letterSpacing:0.5, textTransform:'uppercase' }}>Explore Tournaments</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={{ paddingHorizontal:16, paddingTop:8, paddingBottom:24 }}>
+            <Section title="Active" items={active} />
+            <Section title="Upcoming" items={upcoming} />
+            <Section title="Completed" items={completed} />
+          </View>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// ── Organiser Dashboard (organiser-mode content) ─────────────────────────────
+
+function OrganiserDashboard() {
   const { theme } = useTheme();
   const router = useRouter();
   const { token, isLoggedIn } = useAuthStore();
@@ -282,4 +428,12 @@ export default function OrganiserTab() {
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+// ── Mode-aware entry point ────────────────────────────────────────────────────
+
+export default function OrganiserTab() {
+  const mode = useAuthStore(s => s.mode);
+  if (mode === 'player') return <PlayerMatchesTab />;
+  return <OrganiserDashboard />;
 }

@@ -40,6 +40,7 @@ export default function BadmintonScorerScreen() {
   const [loading,     setLoading]    = useState(true);
   const [walkoverVis, setWalkoverVis] = useState(false);
   const [submitting,  setSubmitting]  = useState(false);
+  const [isPaused,    setIsPaused]    = useState(false);
 
   const loadMatch = useCallback(async () => {
     if (!params.tournamentId) return;
@@ -135,6 +136,20 @@ export default function BadmintonScorerScreen() {
   const handleUndoSet = async () => {
     try { const u = await apiUndoSet(token!, parseInt(matchId)); setMatch(u); }
     catch (e: any) { Alert.alert('Error', e.message); }
+  };
+
+  const handleReset = () => {
+    Alert.alert(
+      'Reset Game',
+      'This will reset the current game score to 0 – 0. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset', style: 'destructive',
+          onPress: () => doScore(0, 0, serving ?? 1),
+        },
+      ]
+    );
   };
 
   const handleWalkover = async (pos: 1 | 2) => {
@@ -277,13 +292,23 @@ export default function BadmintonScorerScreen() {
             </TouchableOpacity>
           )}
 
+          {/* Paused banner */}
+          {isPaused && !isDone && !isPreLive && (
+            <View style={{ backgroundColor: C.gold + '18', borderRadius: 10, borderWidth: 1,
+              borderColor: C.gold + '55', paddingVertical: 10, alignItems: 'center' }}>
+              <Text style={{ color: C.gold, fontWeight: '900', fontSize: 12, letterSpacing: 2, textTransform: 'uppercase' }}>
+                ⏸  Match Paused
+              </Text>
+            </View>
+          )}
+
           {/* Point buttons */}
           {!isDone && !isPreLive && (
             <View style={{ flexDirection: 'row', gap: 10 }}>
               {([{ pos: 1, name: p1Name }, { pos: 2, name: p2Name }] as any[]).map(({ pos, name }) => {
-                const score  = pos === 1 ? s1 : s2;
-                const srv    = serving === pos;
-                const disabled = !!(setWinner || submitting);
+                const score    = pos === 1 ? s1 : s2;
+                const srv      = serving === pos;
+                const disabled = !!(setWinner || submitting || isPaused);
                 return (
                   <View key={pos} style={{ flex: 1, gap: 6 }}>
                     <TouchableOpacity onPress={() => addPoint(pos)} disabled={disabled}
@@ -293,14 +318,34 @@ export default function BadmintonScorerScreen() {
                         opacity: disabled ? 0.4 : 1 }}>
                       <Text style={{ fontSize: 15, fontWeight: '900', color: disabled ? C.muted : '#fff' }}>+ Point</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => undoPoint(pos)} disabled={score === 0 || submitting}
+                    <TouchableOpacity onPress={() => undoPoint(pos)} disabled={score === 0 || submitting || isPaused}
                       style={{ paddingVertical: 9, borderRadius: 8, alignItems: 'center',
-                        borderWidth: 1, borderColor: C.border, opacity: score === 0 ? 0.35 : 1 }}>
+                        borderWidth: 1, borderColor: C.border, opacity: (score === 0 || isPaused) ? 0.35 : 1 }}>
                       <Text style={{ color: C.muted, fontSize: 12, fontWeight: '700' }}>↩ Undo</Text>
                     </TouchableOpacity>
                   </View>
                 );
               })}
+            </View>
+          )}
+
+          {/* Pause + Reset */}
+          {!isDone && !isPreLive && (
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity onPress={() => setIsPaused(p => !p)}
+                style={{ flex: 1, paddingVertical: 11, borderRadius: 9, alignItems: 'center',
+                  borderWidth: 1,
+                  borderColor: isPaused ? C.green + '66' : C.gold + '55',
+                  backgroundColor: isPaused ? C.green + '15' : C.gold + '10' }}>
+                <Text style={{ color: isPaused ? C.green : C.gold, fontWeight: '700', fontSize: 13 }}>
+                  {isPaused ? '▶ Resume' : '⏸ Pause'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleReset} disabled={submitting}
+                style={{ flex: 1, paddingVertical: 11, borderRadius: 9, alignItems: 'center',
+                  borderWidth: 1, borderColor: C.red + '30', opacity: submitting ? 0.4 : 1 }}>
+                <Text style={{ color: C.red, fontWeight: '700', fontSize: 13 }}>↺ Reset Game</Text>
+              </TouchableOpacity>
             </View>
           )}
 

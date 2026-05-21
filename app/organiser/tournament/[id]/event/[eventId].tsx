@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
-  Alert, ActivityIndicator, RefreshControl, Modal, Platform,
+  Alert, ActivityIndicator, RefreshControl, Modal, Platform, Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
@@ -288,22 +288,44 @@ const STAGE_LABELS: Record<string, string> = {
   preliminary: 'Prelim', quarter: 'Quarter Final', semi: 'Semi Final',
 };
 
+// Canonical stage ordering: early rounds first, final last
+const WORKSPACE_STAGE_ORDER = [
+  'group', 'preliminary', 'r128', 'r64', 'r32', 'round_of_32',
+  'r16', 'round_of_16', 'qf', 'quarter', 'sf', 'semi', 'final', 'third_place',
+];
+const stageIdx = (m: any) => {
+  const i = WORKSPACE_STAGE_ORDER.indexOf(m.stage ?? '');
+  return i === -1 ? 999 : i;
+};
+const byStage = (arr: any[]) => [...arr].sort((a, b) => stageIdx(a) - stageIdx(b));
+
 // ── MatchRow ──────────────────────────────────────────────────────────────────
 // Defined OUTSIDE EventWorkspaceScreen so React never sees a new component type
 // on re-render (which would unmount/remount the component and break touches).
+function defaultSetsToWin(_m: any): number {
+  return 2; // Best of 3 is the default for all stages
+}
+
 function MatchRow({
-  m, colors, onScore, onRematch, onDelete,
+  m, colors, onScore, onRematch, onDelete, onSetConfig, sportKey,
 }: {
   m: any;
   colors: any;
-  onScore:   (id: number) => void;
-  onRematch: (id: number) => void;
-  onDelete:  (id: number) => void;
+  onScore:     (id: number) => void;
+  onRematch:   (id: number) => void;
+  onDelete:    (id: number) => void;
+  onSetConfig: (id: number, setsToWin: number) => void;
+  sportKey?: string;
 }) {
   const c       = colors;
   const isLive  = m.status === 'live';
   const isDone  = m.status === 'done';
   const stage   = STAGE_LABELS[m.stage] ?? m.stage ?? '';
+  const isSetSport = sportKey === 'table_tennis' || sportKey === 'badminton';
+  const ls      = m.live_state ?? {};
+  // localSets gives instant visual feedback on tap; falls back to server value
+  const [localSets, setLocalSets] = useState<number | null>(null);
+  const curSets = localSets ?? ls.sets_to_win ?? defaultSetsToWin(m);
 
   const pName = (match: any) => {
     if (match.player_1?.name) return match.player_1.name;
@@ -357,6 +379,61 @@ function MatchRow({
         <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: c.ink, textAlign: 'right' }}
           numberOfLines={1}>{p2Name(m)}</Text>
       </View>
+
+      {/* Sets picker — scheduled TT / Badminton */}
+      {isSetSport && m.status === 'scheduled' && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
+          <Text style={{ fontSize: 10, color: c.muted, fontWeight: '700' }}>Sets:</Text>
+          {([1, 2, 3] as const).map(v => {
+            const label  = v * 2 - 1;   // 1→BO1  2→BO3  3→BO5
+            const active = curSets === v;
+            return (
+              <Pressable
+                key={v}
+                hitSlop={8}
+                onPress={() => {
+                  setLocalSets(v);
+                  onSetConfig(m.match_id, v);
+                }}
+                style={({ pressed }) => ({
+                  borderRadius: 6, paddingHorizontal: 12, paddingVertical: 6,
+                  backgroundColor: active ? c.primary : pressed ? c.primary + '33' : 'transparent',
+                  borderWidth: 1, borderColor: active ? c.primary : c.border,
+                  opacity: pressed ? 0.8 : 1,
+                })}>
+                <Text style={{ fontSize: 12, fontWeight: '800',
+                  color: active ? '#fff' : c.muted }}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+
+      {/* Set history chips — live / done TT / Badminton */}
+      {isSetSport && (isLive || isDone) && (m.sets ?? []).length > 0 && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+          {[...(m.sets ?? [])].sort((a: any, b: any) => a.set_number - b.set_number).map((s: any) => {
+            const complete = s.is_complete;
+            const p1Won    = s.winner === 1;
+            const active   = !complete && isLive;
+            return (
+              <View key={s.set_number} style={{
+                borderRadius: 4, paddingHorizontal: 7, paddingVertical: 2,
+                backgroundColor: active ? c.primary + '18' : 'transparent',
+                borderWidth: 1,
+                borderColor: active ? c.primary + '55' : c.border,
+              }}>
+                <Text style={{
+                  fontSize: 10, fontWeight: '800',
+                  color: active ? c.primary : c.muted,
+                }}>
+                  S{s.set_number}: {s.score_p1}–{s.score_p2}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
 
       {/* Action buttons */}
       <View style={{ flexDirection: 'row', gap: 6, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -501,9 +578,9 @@ export default function EventWorkspaceScreen() {
   const pTab         = isDoubles ? 'pairs' : isTeam ? 'teams' : 'players';
   const showStandings = currentEvent.format === 'round_robin' || currentEvent.format === 'group_knockout';
 
-  const liveMatches     = (currentEvent.matches ?? []).filter((m: any) => m.status === 'live');
-  const scheduledMatches = (currentEvent.matches ?? []).filter((m: any) => m.status === 'scheduled');
-  const doneMatches      = (currentEvent.matches ?? []).filter((m: any) => m.status === 'done');
+  const liveMatches     = byStage((currentEvent.matches ?? []).filter((m: any) => m.status === 'live'));
+  const scheduledMatches = byStage((currentEvent.matches ?? []).filter((m: any) => m.status === 'scheduled'));
+  const doneMatches      = byStage((currentEvent.matches ?? []).filter((m: any) => m.status === 'done'));
   const liveCount        = liveMatches.length;
 
   const allParticipants = (isTeam || isDoubles)
@@ -693,15 +770,26 @@ export default function EventWorkspaceScreen() {
     }
   };
 
+  const handleSetConfig = async (matchId: number, setsToWin: number) => {
+    try {
+      await apiUpdateMatchStatus(token!, matchId, { status: 'scheduled', sets_to_win: setsToWin });
+      loadData();
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'Could not update sets');
+    }
+  };
+
   // Shorthand so every <MatchRow> call stays concise
   const MR = (m: any) => (
     <MatchRow
       key={m.match_id}
       m={m}
       colors={c}
+      sportKey={currentEvent?.sport_key}
       onScore={(id)   => handleMatchAction(id, 'score')}
       onRematch={(id) => handleMatchAction(id, 'rematch')}
       onDelete={handleDeleteMatch}
+      onSetConfig={handleSetConfig}
     />
   );
 
@@ -1099,7 +1187,13 @@ export default function EventWorkspaceScreen() {
                     {gm.map((m: any) => MR(m))}
                   </View>;
                 })}
-                {(currentEvent.matches ?? []).filter((m: any) => !m.group_id).map((m: any) => MR(m))}
+                {(() => {
+                  const noGroup = (currentEvent.matches ?? []).filter((m: any) => !m.group_id);
+                  const liveMN     = byStage(noGroup.filter((m: any) => m.status === 'live'));
+                  const upcomingMN = byStage(noGroup.filter((m: any) => m.status !== 'live' && m.status !== 'done'));
+                  const doneMN     = byStage(noGroup.filter((m: any) => m.status === 'done'));
+                  return [...liveMN, ...upcomingMN, ...doneMN].map((m: any) => MR(m));
+                })()}
               </>}
             </View>
           );
@@ -1327,7 +1421,13 @@ export default function EventWorkspaceScreen() {
                   {gm.map((m: any) => MR(m))}
                 </View>;
               })}
-              {(currentEvent.matches ?? []).filter((m: any) => !m.group_id).map((m: any) => MR(m))}
+              {(() => {
+                const noGroup = (currentEvent.matches ?? []).filter((m: any) => !m.group_id);
+                const liveMN     = byStage(noGroup.filter((m: any) => m.status === 'live'));
+                const upcomingMN = byStage(noGroup.filter((m: any) => m.status !== 'live' && m.status !== 'done'));
+                const doneMN     = byStage(noGroup.filter((m: any) => m.status === 'done'));
+                return [...liveMN, ...upcomingMN, ...doneMN].map((m: any) => MR(m));
+              })()}
             </View>
           );
         })()}

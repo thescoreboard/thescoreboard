@@ -3,6 +3,7 @@
  */
 import { create } from 'zustand';
 import { storage } from '../utils/storage';
+import { apiGetMe } from '../api/client';
 
 const TOKEN_KEY = 'tsb_token';
 const MODE_KEY  = 'tsb_mode';
@@ -28,6 +29,7 @@ type Mode = 'organiser' | 'player';
 
 interface AuthState {
   token:    string | null;
+  user:     any | null;       // cached /me response (includes roles)
   mode:     Mode;
   hydrated: boolean;
 
@@ -35,11 +37,14 @@ interface AuthState {
   clearToken: () => Promise<void>;
   setMode:    (mode: Mode)   => Promise<void>;
   hydrate:    () => Promise<void>;
+  refreshUser: () => Promise<void>;
   isLoggedIn: () => boolean;
+  hasRole:    (role: string) => boolean;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   token:    null,
+  user:     null,
   mode:     'player',
   hydrated: false,
 
@@ -51,16 +56,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const validToken = token && isTokenValid(token) ? token : null;
     if (token && !validToken) await storage.deleteItem(TOKEN_KEY);
     set({ token: validToken, mode: (mode as Mode) || 'player', hydrated: true });
+    // Fetch user profile in background after hydration
+    if (validToken) {
+      try {
+        const user = await apiGetMe(validToken);
+        set({ user });
+      } catch { /* ignore — token may have been revoked */ }
+    }
   },
 
   setToken: async (token: string) => {
     await storage.setItem(TOKEN_KEY, token);
     set({ token });
+    // Eagerly fetch user so roles/name are available immediately after login
+    try {
+      const user = await apiGetMe(token);
+      set({ user });
+    } catch { /* ignore */ }
   },
 
   clearToken: async () => {
     await storage.deleteItem(TOKEN_KEY);
-    set({ token: null });
+    set({ token: null, user: null });
   },
 
   setMode: async (mode: Mode) => {
@@ -68,9 +85,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ mode });
   },
 
+  refreshUser: async () => {
+    const { token } = get();
+    if (!token) return;
+    try {
+      const user = await apiGetMe(token);
+      set({ user });
+    } catch { /* ignore */ }
+  },
+
   isLoggedIn: () => {
     const { token } = get();
     return token !== null && isTokenValid(token);
+  },
+
+  hasRole: (role: string) => {
+    const { user } = get();
+    return Array.isArray(user?.roles) && user.roles.includes(role);
   },
 }));
 

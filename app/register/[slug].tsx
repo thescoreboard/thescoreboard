@@ -46,7 +46,9 @@ export default function RegisterScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const t = await apiGetTournamentBySlug(slug);
+        const data = await apiGetTournamentBySlug(slug);
+        // API returns { tournament: {...}, events: [...] } — flatten so t.name / t.status work directly
+        const t = data.tournament ? { ...data.tournament, events: data.events ?? [] } : data;
         setTournament(t);
         if (isLoggedIn()) {
           const p = await apiGetPlayerProfile(token!).catch(() => null);
@@ -57,12 +59,14 @@ export default function RegisterScreen() {
             setAge(p.age != null ? String(p.age) : '');
             setGender(p.gender ?? 'Male');
           }
-          // Determine next step
-          const openEvents = (t.events ?? []).filter((ev: any) =>
-            ev.format !== undefined && t.status === 'registration'
-          );
-          if (openEvents.length === 1) { setSelectedEvent(openEvents[0]); setStep('form'); }
-          else setStep('select');
+          // If only one event — skip the select screen and go straight to the form
+          const events = t.events ?? [];
+          if (events.length === 1) {
+            setSelectedEvent(events[0]);
+            setStep('form');
+          } else {
+            setStep('select');
+          }
         } else {
           setStep('auth');
         }
@@ -73,16 +77,24 @@ export default function RegisterScreen() {
 
   const participantType = selectedEvent?.participant_type ?? 'individual';
 
-  // Ensure doubles_pair always has exactly 2 member slots pre-filled
+  // Required roster size: team_size (football) or squad_size (cricket), default 1
+  const requiredSize = selectedEvent?.team_size ?? selectedEvent?.squad_size ?? 1;
+
+  // Pre-fill the correct number of member slots when the event is selected
   React.useEffect(() => {
-    if (participantType === 'doubles_pair' && members.length < 2) {
-      setMembers(prev => {
-        const next = [...prev];
-        while (next.length < 2) next.push({ name:'', role:'player', jersey_number:'', age:'' });
-        return next;
-      });
+    if (!selectedEvent) return;
+    if (participantType === 'doubles_pair') {
+      setMembers([
+        { name:'', role:'player1', jersey_number:'', age:'' },
+        { name:'', role:'player2', jersey_number:'', age:'' },
+      ]);
+    } else if (participantType === 'team') {
+      const slots = Math.max(requiredSize, 1);
+      setMembers(Array.from({ length: slots }, (_, i) => ({
+        name:'', role: i === 0 ? 'captain' : 'player', jersey_number:'', age:'',
+      })));
     }
-  }, [participantType]);
+  }, [selectedEvent?.event_id]);
 
   const handleSubmit = async () => {
     if (!selectedEvent) return;
@@ -98,6 +110,12 @@ export default function RegisterScreen() {
     }
     if (participantType === 'team' && !teamName.trim()) {
       return Alert.alert('Required', 'Please enter a team name.');
+    }
+    if (participantType === 'team') {
+      const missing = members.slice(0, requiredSize).filter(m => !m.name?.trim()).length;
+      if (missing > 0) {
+        return Alert.alert('Required', `Please fill in all ${requiredSize} required player names.`);
+      }
     }
 
     setSubmitting(true);
@@ -247,27 +265,52 @@ export default function RegisterScreen() {
                     placeholder="9876543210" placeholderTextColor={c.muted}
                     value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
                 </View>
-                <Text style={{ fontSize:13, fontWeight:'700', color:c.ink, marginTop:4 }}>Team Members</Text>
-                {members.map((m, i) => (
-                  <View key={i} style={[s.memberRow, { backgroundColor:c.elevated, borderColor:c.border }]}>
-                    <View style={{ flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
-                      <Text style={{ color:c.muted, fontSize:12, fontWeight:'700' }}>Player {i+1}</Text>
-                      {i > 0 && <TouchableOpacity onPress={() => setMembers(prev => prev.filter((_,j)=>j!==i))}><Text style={{ color:'#e53e3e', fontSize:18 }}>×</Text></TouchableOpacity>}
+                <View style={{ flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop:4 }}>
+                  <Text style={{ fontSize:13, fontWeight:'700', color:c.ink }}>Team Members</Text>
+                  {requiredSize > 1 && (
+                    <Text style={{ fontSize:11, color:c.muted }}>{requiredSize} required · {members.length} added</Text>
+                  )}
+                </View>
+                {members.map((m, i) => {
+                  const isRequired = i < requiredSize;
+                  return (
+                    <View key={i} style={[s.memberRow, { backgroundColor:c.elevated, borderColor:c.border }]}>
+                      <View style={{ flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                        <View style={{ flexDirection:'row', alignItems:'center', gap:6 }}>
+                          <Text style={{ color:c.muted, fontSize:12, fontWeight:'700' }}>Player {i+1}</Text>
+                          {isRequired && (
+                            <View style={{ backgroundColor:c.primary+'22', borderRadius:4, paddingHorizontal:5, paddingVertical:1 }}>
+                              <Text style={{ fontSize:9, color:c.primary, fontWeight:'800' }}>REQUIRED</Text>
+                            </View>
+                          )}
+                        </View>
+                        {!isRequired && (
+                          <TouchableOpacity onPress={() => setMembers(prev => prev.filter((_,j) => j !== i))}>
+                            <Text style={{ color:'#e53e3e', fontSize:18 }}>×</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                      <TextInput
+                        style={[s.input, { backgroundColor:c.surface, borderColor:c.border, color:c.ink }]}
+                        placeholder={`Player ${i+1} name${isRequired ? ' *' : ''}`}
+                        placeholderTextColor={c.muted}
+                        value={m.name}
+                        onChangeText={v => setMembers(prev => prev.map((x,j) => j===i ? {...x,name:v} : x))}
+                      />
+                      <View style={{ flexDirection:'row', gap:6, marginTop:8, flexWrap:'wrap' }}>
+                        {ROLES.map(r => (
+                          <TouchableOpacity key={r}
+                            onPress={() => setMembers(prev => prev.map((x,j) => j===i ? {...x,role:r} : x))}
+                            style={[s.pill, { backgroundColor: m.role===r ? c.ink : c.surface, borderColor:c.border }]}>
+                            <Text style={{ color: m.role===r ? c.bg : c.muted, fontSize:11 }}>{r.replace('_',' ')}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
                     </View>
-                    <TextInput style={[s.input, { backgroundColor:c.surface, borderColor:c.border, color:c.ink }]}
-                      placeholder="Name" placeholderTextColor={c.muted}
-                      value={m.name} onChangeText={v => setMembers(prev => prev.map((x,j)=>j===i?{...x,name:v}:x))} />
-                    <View style={{ flexDirection:'row', gap:6, marginTop:8, flexWrap:'wrap' }}>
-                      {ROLES.map(r => (
-                        <TouchableOpacity key={r} onPress={() => setMembers(prev => prev.map((x,j)=>j===i?{...x,role:r}:x))}
-                          style={[s.pill, { backgroundColor: m.role===r?c.ink:c.surface, borderColor:c.border }]}>
-                          <Text style={{ color: m.role===r?c.bg:c.muted, fontSize:11 }}>{r.replace('_',' ')}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-                ))}
-                <TouchableOpacity onPress={() => setMembers(prev => [...prev, { name:'', role:'player', jersey_number:'', age:'' }])}
+                  );
+                })}
+                <TouchableOpacity
+                  onPress={() => setMembers(prev => [...prev, { name:'', role:'player', jersey_number:'', age:'' }])}
                   style={[s.addBtn, { borderColor:c.border }]}>
                   <Text style={{ color:c.muted, fontWeight:'700', fontSize:13 }}>+ Add Player</Text>
                 </TouchableOpacity>
