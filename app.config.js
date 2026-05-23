@@ -76,6 +76,9 @@ module.exports = {
       // OAuth consent screen scopes: .../auth/youtube
       googleClientIdAndroid: process.env.GOOGLE_CLIENT_ID_ANDROID || '876140482091-28svan5do1odatprdhn0jq8fmfca9hp9.apps.googleusercontent.com',
       googleClientIdWeb:     process.env.GOOGLE_CLIENT_ID_WEB     || '',
+      eas: {
+        projectId: "3e544007-87d3-4481-bab0-4ab594a4f08e"
+      }
     },
   },
 };
