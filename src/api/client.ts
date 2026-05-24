@@ -41,7 +41,16 @@ function resolveUrls(): { api: string; ws: string } {
   const host =
     Constants.expoConfig?.hostUri?.split(':')[0]   // Expo Go / dev client
     ?? Constants.manifest2?.extra?.expoGo?.debuggerHost?.split(':')[0]  // fallback
-    ?? '192.168.1.1';  // last-resort: replace with your LAN IP if auto-detect fails
+    ?? null;
+
+  // Safety net: if no Metro host is available (standalone dev APK with no
+  // bundler running), fall back to production so the app works.
+  if (!host) {
+    return {
+      api: 'https://thescoreboard.in/api',
+      ws:  'wss://thescoreboard.in/api',
+    };
+  }
 
   return {
     api: `http://${host}:8000/api`,
@@ -51,6 +60,8 @@ function resolveUrls(): { api: string; ws: string } {
 
 const { api: BASE_URL, ws: WS_BASE_RESOLVED } = resolveUrls();
 export const WS_BASE: string = WS_BASE_RESOLVED;
+/** Exposed for debug display in the profile screen. */
+export const RESOLVED_API_URL: string = BASE_URL;
 
 // ── Core fetch wrapper ──────────────────────────────────────────
 

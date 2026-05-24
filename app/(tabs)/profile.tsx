@@ -14,7 +14,7 @@ import { useTheme } from '../../src/hooks/useTheme';
 import { useAuthStore } from '../../src/store/auth';
 import {
   apiGetMe, apiGetPlayerProfile, apiSavePlayerProfile,
-  apiGetMyStats, apiGetMyTournaments,
+  apiGetMyStats, apiGetMyTournaments, RESOLVED_API_URL,
 } from '../../src/api/client';
 import { F, STATUS_COLORS, STATUS_LABELS, SPORT_COLORS, SPORT_LABELS } from '../../src/theme';
 
@@ -466,6 +466,11 @@ function PlayerDashboard() {
           </View>
         </View>
 
+        {/* ── API Debug ── */}
+        <View style={{ paddingHorizontal:16, marginBottom:12 }}>
+          <ApiDebugCard />
+        </View>
+
         {/* ── Sign out ── */}
         <View style={{ paddingHorizontal:16, paddingBottom:32 }}>
           <SignOutButton />
@@ -538,6 +543,11 @@ function OrganiserProfile() {
           </View>
         </View>
 
+        {/* API debug */}
+        <View style={{ marginBottom:16 }}>
+          <ApiDebugCard />
+        </View>
+
         <SignOutButton />
       </ScrollView>
     </SafeAreaView>
@@ -545,6 +555,83 @@ function OrganiserProfile() {
 }
 
 // ── Sign out button (shared) ──────────────────────────────────────────────────
+
+// ── API Debug card ────────────────────────────────────────────────────────────
+
+function ApiDebugCard() {
+  const { theme } = useTheme();
+  const c = theme.colors;
+  const [ping, setPing] = useState<'idle'|'checking'|'ok'|'fail'>('idle');
+  const [latency, setLatency] = useState<number | null>(null);
+
+  const isProduction = RESOLVED_API_URL.includes('thescoreboard.in');
+
+  const checkConnection = async () => {
+    setPing('checking');
+    setLatency(null);
+    const start = Date.now();
+    try {
+      const res = await fetch(`${RESOLVED_API_URL}/public/home`, { method: 'GET' });
+      if (res.ok) {
+        setPing('ok');
+        setLatency(Date.now() - start);
+      } else {
+        setPing('fail');
+      }
+    } catch {
+      setPing('fail');
+    }
+  };
+
+  const pingColor = ping === 'ok' ? '#22c55e' : ping === 'fail' ? '#e53e3e' : ping === 'checking' ? '#D97706' : c.muted;
+
+  return (
+    <View style={{ backgroundColor:c.surface, borderRadius:12, borderWidth:1.5, borderColor:c.border, padding:16, gap:10 }}>
+      <Text style={{ fontFamily:F.bold, fontSize:11, color:c.muted, textTransform:'uppercase', letterSpacing:0.8 }}>
+        API Connection
+      </Text>
+
+      {/* Environment badge */}
+      <View style={{ flexDirection:'row', alignItems:'center', gap:8 }}>
+        <View style={{ borderRadius:6, paddingHorizontal:8, paddingVertical:4,
+          backgroundColor: isProduction ? '#22c55e18' : '#D9770618',
+          borderWidth:1, borderColor: isProduction ? '#22c55e40' : '#D9770640' }}>
+          <Text style={{ fontFamily:F.bold, fontSize:10, color: isProduction ? '#22c55e' : '#D97706' }}>
+            {isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}
+          </Text>
+        </View>
+      </View>
+
+      {/* URL */}
+      <Text style={{ fontFamily:F.body, fontSize:11, color:c.muted }} numberOfLines={1}>
+        {RESOLVED_API_URL}
+      </Text>
+
+      {/* Ping result */}
+      {ping !== 'idle' && (
+        <View style={{ flexDirection:'row', alignItems:'center', gap:6 }}>
+          <View style={{ width:8, height:8, borderRadius:4, backgroundColor: pingColor }} />
+          <Text style={{ fontFamily:F.bold, fontSize:12, color: pingColor }}>
+            {ping === 'checking' ? 'Checking…'
+              : ping === 'ok' ? `Connected · ${latency}ms`
+              : 'Failed — API unreachable'}
+          </Text>
+        </View>
+      )}
+
+      <TouchableOpacity
+        onPress={checkConnection}
+        disabled={ping === 'checking'}
+        style={{ borderRadius:8, borderWidth:1.5, borderColor:c.border,
+          paddingVertical:9, alignItems:'center', opacity: ping === 'checking' ? 0.6 : 1 }}
+      >
+        <Text style={{ fontFamily:F.bold, fontSize:12, color:c.ink }}>
+          {ping === 'checking' ? 'Checking…' : 'Test Connection'}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
 
 function SignOutButton() {
   const { theme } = useTheme();
