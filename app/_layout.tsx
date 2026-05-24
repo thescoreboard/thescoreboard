@@ -31,7 +31,8 @@ function RootLayoutInner() {
         <Stack.Screen name="(auth)"     options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="t/[slug]"   options={{ headerShown: false }} />
         <Stack.Screen name="register/[slug]" options={{ headerShown: false }} />
-        <Stack.Screen name="organiser"  options={{ headerShown: false }} />
+        <Stack.Screen name="organiser"   options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding" options={{ headerShown: false, gestureEnabled: false }} />
       </Stack>
     </>
   );

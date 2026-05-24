@@ -18,6 +18,7 @@ import RoadToFinal from '../../src/components/shared/RoadToFinal';
 import { F, SPORT_COLORS, SPORT_LABELS, STATUS_LABELS, STATUS_COLORS } from '../../src/theme';
 import { computeStandings } from '../../src/utils/standings';
 import { STAGE_ORDER } from '../../src/utils/match';
+import { addRecentlyViewed } from '../../src/utils/recentlyViewed';
 
 // ── Ticker bar (live scores strip) ───────────────────────────────────
 function TickerBar({ matches }: { matches: any[] }) {
@@ -385,6 +386,18 @@ export default function TournamentPublicScreen() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { const id = setInterval(load, 8000); return () => clearInterval(id); }, [load]);
+
+  // Log this tournament as recently viewed once data is available
+  useEffect(() => {
+    if (!t?.name) return;
+    const sportKey = t.events?.[0]?.sport_key ?? t.sport_key ?? '';
+    addRecentlyViewed({
+      slug:     t.slug ?? slug,
+      name:     t.name,
+      sportKey,
+      status:   t.status ?? 'draft',
+    }).catch(() => {}); // fire-and-forget
+  }, [t?.tournament_id]);
 
   useTournamentSocket({
     slug,

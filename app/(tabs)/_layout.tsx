@@ -17,8 +17,9 @@ function TabIcon({ label, focused, color }: { label: string; focused: boolean; c
 
 export default function TabLayout() {
   const { theme } = useTheme();
-  const mode = useAuthStore(s => s.mode);
-  const isPlayer = mode === 'player';
+  const { mode, isLoggedIn } = useAuthStore(s => ({ mode: s.mode, isLoggedIn: s.isLoggedIn }));
+  const isOrganiser = isLoggedIn() && mode === 'organiser';
+  const isPlayer    = !isOrganiser; // guest + player both see player-style tabs
 
   return (
     <Tabs
@@ -42,7 +43,7 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="explore"
-        options={{ tabBarIcon: ({ color, focused }) => <TabIcon label="Explore"  focused={focused} color={color} /> }}
+        options={{ tabBarIcon: ({ color, focused }) => <TabIcon label={isPlayer ? 'Explore' : 'Guides'} focused={focused} color={color} /> }}
       />
       <Tabs.Screen
         name="organiser"
