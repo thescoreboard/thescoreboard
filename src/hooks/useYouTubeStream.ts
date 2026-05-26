@@ -99,19 +99,17 @@ export function useYouTubeStream() {
   const [broadcastId, setBroadcastId] = useState<string | null>(null);
 
   // ── Build the OAuth redirect URI ──────────────────────────────────────────
-  // For a dev build this will be the reverse-DNS scheme: in.thescoreboard.app://
-  // For production it should match what is registered in Google Cloud Console.
-  const redirectUri = AuthSession.makeRedirectUri({
-    scheme: 'thescoreboard',
-    path: 'oauth',
-  });
+  // Use Expo's auth proxy (https://auth.expo.io/@rejinold14/thescoreboard)
+  // so the redirect URI is a valid HTTPS URL that Google Cloud Console accepts.
+  // Custom schemes (thescoreboard://) are rejected by Google Web app clients.
+  const redirectUri = AuthSession.makeRedirectUri({ useProxy: true });
 
   // ── Read client ID from app.config extra ─────────────────────────────────
-  // Android builds use the Android OAuth client; web uses the Web client.
+  // expo-auth-session's redirect-based OAuth always requires a Web application
+  // client ID — even on Android. The Android client ID does NOT support
+  // redirect URIs and will silently fail.
   const extra = Constants.expoConfig?.extra ?? {};
-  const clientId: string = Platform.OS === 'web'
-    ? ((extra.googleClientIdWeb     as string) ?? '')
-    : ((extra.googleClientIdAndroid as string) ?? '');
+  const clientId: string = (extra.googleClientIdWeb as string) ?? '';
 
   // Build the auth request (implicit / token grant — no PKCE needed)
   const [request, response, promptAsync] = AuthSession.useAuthRequest(

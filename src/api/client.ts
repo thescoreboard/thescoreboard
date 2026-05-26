@@ -25,8 +25,8 @@ import Constants from 'expo-constants';
 function resolveUrls(): { api: string; ws: string } {
   if (!__DEV__) {
     return {
-      api: 'https://thescoreboard.in/api',
-      ws:  'wss://thescoreboard.in/api',
+      api: 'https://api.thescoreboard.in/api',
+      ws:  'wss://api.thescoreboard.in/api',
     };
   }
 
@@ -47,8 +47,8 @@ function resolveUrls(): { api: string; ws: string } {
   // bundler running), fall back to production so the app works.
   if (!host) {
     return {
-      api: 'https://thescoreboard.in/api',
-      ws:  'wss://thescoreboard.in/api',
+      api: 'https://api.thescoreboard.in/api',
+      ws:  'wss://api.thescoreboard.in/api',
     };
   }
 
@@ -257,12 +257,13 @@ export const apiPublicRegisterTeam = (tId: number, d: any) =>
   request('POST', `/public/tournaments/${tId}/register-team`, null, d);
 
 // ── Share / OG base URL ──────────────────────────────────────────
-// The share endpoint lives on the backend and returns an HTML page with
-// full OG meta tags (og:title, og:image, twitter:card, etc.) so that
-// WhatsApp / Facebook / Twitter / Instagram all show rich link previews.
+// In production:
+//   Share links go to thescoreboard.in/share/t/{slug} (Vercel frontend).
+//   Vercel proxies /share/t/:slug → api.thescoreboard.in/api/share/t/:slug.
+//   This means WhatsApp shows "thescoreboard.in" as the URL — not the API host.
 //
-// In production this is always https://thescoreboard.in
-// In dev we strip /api from the API base to get the backend root.
+// In dev:
+//   Go straight to the local backend (no Vercel proxy in dev).
 export const SHARE_BASE: string = !__DEV__
   ? 'https://thescoreboard.in'
   : BASE_URL.endsWith('/api')
@@ -270,8 +271,14 @@ export const SHARE_BASE: string = !__DEV__
     : BASE_URL;
 
 export const shareUrl = {
-  tournament: (slug: string)      => `${SHARE_BASE}/api/share/t/${slug}`,
-  match:      (matchId: number)   => `${SHARE_BASE}/api/share/m/${matchId}`,
+  // prod → thescoreboard.in/share/t/{slug}  (proxied to backend by Vercel)
+  // dev  → http://192.168.x.x:8000/api/share/t/{slug}  (direct)
+  tournament: (slug: string)    => !__DEV__
+    ? `${SHARE_BASE}/share/t/${slug}`
+    : `${SHARE_BASE}/api/share/t/${slug}`,
+  match:      (matchId: number) => !__DEV__
+    ? `${SHARE_BASE}/share/m/${matchId}`
+    : `${SHARE_BASE}/api/share/m/${matchId}`,
 };
 
 // ── Media upload (multipart) ─────────────────────────────────────

@@ -404,16 +404,18 @@ export default function StreamScreen() {
   // RENDER: Expo Go guard
   // ─────────────────────────────────────────────────────────────────────────
   if (IS_EXPO_GO || !RTMPPublisher) {
+    const isIOS = Platform.OS === 'ios';
     return (
       <View style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center', padding: 32 }}>
         <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-        <Text style={{ fontSize: 40, marginBottom: 20 }}>📡</Text>
+        <Text style={{ fontSize: 40, marginBottom: 20 }}>{isIOS ? '🍎' : '📡'}</Text>
         <Text style={{ color: C.ink, fontSize: 18, fontWeight: '900', textAlign: 'center', marginBottom: 12 }}>
-          Dev Build Required
+          {isIOS ? 'Android Only Feature' : 'Dev Build Required'}
         </Text>
         <Text style={{ color: C.muted, fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 28 }}>
-          Live streaming uses native camera APIs that aren't available in Expo Go.
-          You need to build and install the development APK.
+          {isIOS
+            ? 'Live streaming from the phone camera is currently supported on Android only. Use the website on a desktop with OBS to stream from iOS, or use an Android device.'
+            : 'Live streaming uses native camera APIs that aren\'t available in Expo Go. You need to build and install the development APK.'}
         </Text>
 
         <View style={{ backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 12, padding: 18, width: '100%', marginBottom: 24 }}>

@@ -4,8 +4,8 @@
  * and Constants.expoConfig.hostUri — no env vars needed here.
  */
 
-const API_URL = 'https://thescoreboard.in/api';
-const WS_URL  = 'wss://thescoreboard.in/api';
+const API_URL = 'https://api.thescoreboard.in/api';
+const WS_URL  = 'wss://api.thescoreboard.in/api';
 
 /** @type {import('expo/config').ExpoConfig} */
 module.exports = {
@@ -29,6 +29,7 @@ module.exports = {
         NSCameraUsageDescription: 'Used to live stream matches and upload tournament logos.',
         NSMicrophoneUsageDescription: 'Used to capture audio when live streaming matches.',
         NSPhotoLibraryUsageDescription: 'Used to select tournament logos and posters.',
+        NSPhotoLibraryAddUsageDescription: 'Used to save tournament posters and match screenshots.',
       },
     },
     android: {
@@ -62,20 +63,28 @@ module.exports = {
       apiUrl: API_URL,
       wsUrl:  WS_URL,
       // ── YouTube / Google OAuth ───────────────────────────────────────────
-      // Two separate OAuth client IDs are required:
-      //   1. Android client (type: Android, package: in.thescoreboard.app)
-      //      → used on physical device / APK builds
-      //   2. Web client (type: Web application)
-      //      → used when running on web (localhost:8081 / thescoreboard.in)
-      //      Authorized redirect URIs to add in Google Cloud Console:
-      //        http://localhost:8081
-      //        https://thescoreboard.in
+      // expo-auth-session uses a browser redirect flow, which REQUIRES a
+      // "Web application" OAuth client — NOT an Android client.
+      // Android OAuth clients do not support redirect URIs and will cause
+      // useAuthRequest() to return null, disabling the Google button.
       //
-      // Guide: console.cloud.google.com → APIs & Services → Credentials
-      // Enable: YouTube Data API v3
-      // OAuth consent screen scopes: .../auth/youtube
+      // Setup (console.cloud.google.com → APIs & Services → Credentials):
+      //   1. Create OAuth 2.0 Client ID → type: Web application
+      //      Name: "TheScoreBoard Mobile"
+      //      Authorized redirect URIs:
+      //        https://auth.expo.io/@YOUR_EXPO_USERNAME/thescoreboard
+      //        thescoreboard://
+      //   2. Paste the resulting client ID below (or set env var)
+      //   3. Enable: YouTube Data API v3
+      //   4. OAuth consent screen scopes: .../auth/youtube.upload, .../auth/youtube
+      //
+      // The Android client ID (in .env) is only needed if you switch to
+      // @react-native-google-signin/google-signin (native SDK approach).
       googleClientIdAndroid: process.env.GOOGLE_CLIENT_ID_ANDROID || '876140482091-28svan5do1odatprdhn0jq8fmfca9hp9.apps.googleusercontent.com',
-      googleClientIdWeb:     process.env.GOOGLE_CLIENT_ID_WEB     || '',
+      // Web application client ID — used by expo-auth-session on BOTH web and
+      // native Android (redirect flow). Must have "thescoreboard://" added as
+      // an Authorized Redirect URI in Google Cloud Console.
+      googleClientIdWeb:     process.env.GOOGLE_CLIENT_ID_WEB     || '876140482091-5vc5130v75fa038i38nro0la6gdlmr2r.apps.googleusercontent.com',
       eas: {
         projectId: "3e544007-87d3-4481-bab0-4ab594a4f08e"
       }

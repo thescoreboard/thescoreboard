@@ -629,9 +629,9 @@ export default function HomeScreen() {
                 {liveNow.length > 3 && (
                   <TouchableOpacity
                     onPress={() => router.push('/(tabs)/explore' as any)}
-                    style={[s.viewAllBtn, { borderColor: c.border }]}
+                    style={[s.viewAllBtn, { backgroundColor: c.primary }]}
                   >
-                    <Text style={[s.viewAllText, { fontFamily: F.bold, color: c.ink }]}>View All</Text>
+                    <Text style={[s.viewAllText, { fontFamily: F.bold }]}>View All →</Text>
                   </TouchableOpacity>
                 )}
               </>
@@ -872,6 +872,10 @@ const s = StyleSheet.create({
 
   // Happening sub
   happeningSub: { fontSize:13, paddingHorizontal:24, marginTop:-6 },
+
+  // View All button (below live section)
+  viewAllBtn:  { alignSelf:'center', marginTop:14, borderRadius:8, paddingHorizontal:22, paddingVertical:10 },
+  viewAllText: { color:'#fff', fontSize:11, fontWeight:'800', textTransform:'uppercase', letterSpacing:1 },
 
   // Explore CTA
   exploreCta:     { marginHorizontal:16, marginTop:20, borderRadius:10, paddingVertical:14, alignItems:'center' },

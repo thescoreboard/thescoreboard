@@ -24,10 +24,15 @@ export default function LoginScreen() {
   const [gLoading, setGLoading] = useState(false);
 
   // ── Google OAuth (native only — web stub returns null/null/noop) ──────────
+  // expo-auth-session uses a browser redirect flow which requires a Web
+  // application OAuth client ID — NOT an Android client ID.
+  // Set GOOGLE_CLIENT_ID_WEB in your environment (or app.config.js extra)
+  // to the "Web application" client ID from Google Cloud Console.
   const extra = Constants.expoConfig?.extra ?? {};
   const [request, response, promptAsync] = useGoogleSignIn({
-    androidClientId: extra.googleClientIdAndroid,
-    webClientId:     extra.googleClientIdWeb || undefined,
+    webClientId: extra.googleClientIdWeb || undefined,
+    // androidClientId is intentionally NOT passed — Android clients don't
+    // support redirect URIs and will make useAuthRequest return null.
   });
 
   const isNative = Platform.OS !== 'web';

@@ -14,7 +14,7 @@ import { useTheme } from '../../src/hooks/useTheme';
 import { useAuthStore } from '../../src/store/auth';
 import {
   apiGetMe, apiGetPlayerProfile, apiSavePlayerProfile,
-  apiGetMyStats, apiGetMyTournaments, RESOLVED_API_URL,
+  apiGetMyStats, apiGetMyTournaments,
 } from '../../src/api/client';
 import { F, STATUS_COLORS, STATUS_LABELS, SPORT_COLORS, SPORT_LABELS } from '../../src/theme';
 
@@ -33,7 +33,7 @@ function sportIcon(key: string): string {
   return icons[key] ?? '🏅';
 }
 
-// ── Mode Switcher bar ─────────────────────────────────────────────────────────
+// ── Mode Switcher — segmented control ────────────────────────────────────────
 
 function ModeSwitcher({ mode, hasOrganiser }: { mode: string; hasOrganiser: boolean }) {
   const { theme } = useTheme();
@@ -42,34 +42,44 @@ function ModeSwitcher({ mode, hasOrganiser }: { mode: string; hasOrganiser: bool
 
   const isPlayer = mode === 'player';
 
-  return (
-    <View style={{ flexDirection:'row', alignItems:'center', justifyContent:'space-between',
-      paddingHorizontal:16, paddingVertical:10, backgroundColor:c.surface,
-      borderBottomWidth:1.5, borderBottomColor:c.border }}>
-      {/* Current mode pill */}
-      <View style={{ flexDirection:'row', alignItems:'center', gap:8 }}>
-        <View style={{ paddingHorizontal:10, paddingVertical:4, borderRadius:20,
-          backgroundColor: isPlayer ? c.primary+'18' : '#7c3aed18',
-          borderWidth:1.5, borderColor: isPlayer ? c.primary+'44' : '#7c3aed44' }}>
-          <Text style={{ fontFamily:F.bold, fontSize:10, letterSpacing:0.8, textTransform:'uppercase',
-            color: isPlayer ? c.primary : '#7c3aed' }}>
-            {isPlayer ? '🏅 Player Mode' : '⚙️ Organiser Mode'}
-          </Text>
-        </View>
-      </View>
+  // Only show switcher if user actually has both roles
+  if (!hasOrganiser && isPlayer) return null;
 
-      {/* Switch button */}
-      {(hasOrganiser || !isPlayer) && (
+  return (
+    <View style={{ paddingHorizontal:16, paddingVertical:10,
+      backgroundColor:c.surface, borderBottomWidth:1.5, borderBottomColor:c.border }}>
+      <View style={{ flexDirection:'row', backgroundColor:c.elevated,
+        borderRadius:12, borderWidth:1.5, borderColor:c.border, padding:3 }}>
+
+        {/* Player tab */}
         <TouchableOpacity
-          onPress={() => setMode(isPlayer ? 'organiser' : 'player')}
-          style={{ flexDirection:'row', alignItems:'center', gap:4,
-            borderWidth:1.5, borderColor:c.border, borderRadius:8,
-            paddingHorizontal:12, paddingVertical:6 }}>
-          <Text style={{ fontFamily:F.bold, fontSize:11, color:c.muted }}>
-            {isPlayer ? 'Organiser →' : '← Player'}
+          onPress={() => setMode('player')}
+          style={{ flex:1, flexDirection:'row', alignItems:'center', justifyContent:'center',
+            gap:6, paddingVertical:9, borderRadius:9,
+            backgroundColor: isPlayer ? c.primary : 'transparent' }}>
+          <Text style={{ fontSize:13 }}>🏅</Text>
+          <Text style={{ fontFamily:F.bold, fontSize:11, letterSpacing:0.5,
+            textTransform:'uppercase',
+            color: isPlayer ? '#fff' : c.muted }}>
+            Player
           </Text>
         </TouchableOpacity>
-      )}
+
+        {/* Organiser tab */}
+        <TouchableOpacity
+          onPress={() => setMode('organiser')}
+          style={{ flex:1, flexDirection:'row', alignItems:'center', justifyContent:'center',
+            gap:6, paddingVertical:9, borderRadius:9,
+            backgroundColor: !isPlayer ? '#7c3aed' : 'transparent' }}>
+          <Text style={{ fontSize:13 }}>⚙️</Text>
+          <Text style={{ fontFamily:F.bold, fontSize:11, letterSpacing:0.5,
+            textTransform:'uppercase',
+            color: !isPlayer ? '#fff' : c.muted }}>
+            Organiser
+          </Text>
+        </TouchableOpacity>
+
+      </View>
     </View>
   );
 }
@@ -466,11 +476,6 @@ function PlayerDashboard() {
           </View>
         </View>
 
-        {/* ── API Debug ── */}
-        <View style={{ paddingHorizontal:16, marginBottom:12 }}>
-          <ApiDebugCard />
-        </View>
-
         {/* ── Sign out ── */}
         <View style={{ paddingHorizontal:16, paddingBottom:32 }}>
           <SignOutButton />
@@ -489,18 +494,14 @@ function OrganiserProfile() {
   const { token, isLoggedIn, mode, hasRole, user: storeUser } = useAuthStore();
 
   const [user,    setUser]    = useState<any>(storeUser);
-  const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!isLoggedIn() || !token) { setLoading(false); return; }
     (async () => {
       try {
-        const [u, p] = await Promise.all([
-          apiGetMe(token),
-          apiGetPlayerProfile(token).catch(() => null),
-        ]);
-        setUser(u); setProfile(p);
+        const u = await apiGetMe(token);
+        setUser(u);
       } catch {}
       setLoading(false);
     })();
@@ -515,39 +516,65 @@ function OrganiserProfile() {
     );
   }
 
+  const displayName = user?.name ?? profile?.name ?? 'Organiser';
+
   return (
     <SafeAreaView style={{ flex:1, backgroundColor:c.bg }}>
       <ModeSwitcher mode={mode} hasOrganiser={hasRole('organiser')} />
 
-      <ScrollView contentContainerStyle={{ padding:16 }}>
-        {/* Header */}
-        <Text style={{ fontFamily:F.display, fontSize:16, color:c.ink, letterSpacing:-0.5, marginBottom:4 }}>
-          Account Settings
-        </Text>
-        <Text style={{ fontFamily:F.body, fontSize:13, color:c.muted, marginBottom:20 }}>
-          {user?.email}
-        </Text>
+      <ScrollView contentContainerStyle={{ padding:16, paddingBottom:40 }}>
 
-        {/* Profile edit */}
-        <ProfileEditCard profile={profile} onSaved={(p) => setProfile(p)} />
+        {/* ── Organiser hero ── */}
+        <View style={{ alignItems:'center', paddingVertical:28,
+          borderBottomWidth:1.5, borderBottomColor:c.border, marginBottom:20 }}>
+          {/* Avatar */}
+          <View style={{ width:72, height:72, borderRadius:36,
+            backgroundColor:'#7c3aed', alignItems:'center', justifyContent:'center',
+            marginBottom:12, borderWidth:3, borderColor:'#7c3aed44' }}>
+            <Text style={{ fontFamily:F.display, fontSize:24, color:'#fff' }}>
+              {initials(displayName)}
+            </Text>
+          </View>
+          <Text style={{ fontFamily:F.display, fontSize:18, color:c.ink, letterSpacing:-0.5, marginBottom:4 }}>
+            {displayName}
+          </Text>
+          <Text style={{ fontFamily:F.body, fontSize:13, color:c.muted }}>
+            {user?.email}
+          </Text>
+          {/* Organiser badge */}
+          <View style={{ marginTop:10, paddingHorizontal:12, paddingVertical:5, borderRadius:20,
+            backgroundColor:'#7c3aed18', borderWidth:1.5, borderColor:'#7c3aed44' }}>
+            <Text style={{ fontFamily:F.bold, fontSize:10, color:'#7c3aed',
+              textTransform:'uppercase', letterSpacing:0.8 }}>
+              ⚙️ Tournament Organiser
+            </Text>
+          </View>
+        </View>
 
-        {/* Account card */}
+        {/* ── Account details ── */}
         <View style={{ backgroundColor:c.surface, borderRadius:12, borderWidth:1.5,
           borderColor:c.border, overflow:'hidden', marginBottom:16 }}>
           <View style={{ padding:14, borderBottomWidth:1, borderBottomColor:c.border }}>
-            <Text style={{ fontFamily:F.bold, fontSize:11, color:c.muted, textTransform:'uppercase', letterSpacing:1.2 }}>Account</Text>
+            <Text style={{ fontFamily:F.bold, fontSize:11, color:c.muted,
+              textTransform:'uppercase', letterSpacing:1.2 }}>Account</Text>
           </View>
-          <View style={{ padding:16 }}>
-            <Text style={{ fontFamily:F.bold, fontSize:10, color:c.muted, textTransform:'uppercase', letterSpacing:0.5 }}>Email</Text>
-            <Text style={{ fontFamily:F.body, fontSize:13, color:c.ink, fontWeight:'600', marginTop:2 }}>{user?.email}</Text>
+          <View style={{ padding:16, gap:14 }}>
+            <View>
+              <Text style={{ fontFamily:F.bold, fontSize:10, color:c.muted,
+                textTransform:'uppercase', letterSpacing:0.5 }}>Name</Text>
+              <Text style={{ fontFamily:F.body, fontSize:14, color:c.ink,
+                fontWeight:'600', marginTop:2 }}>{displayName}</Text>
+            </View>
+            <View>
+              <Text style={{ fontFamily:F.bold, fontSize:10, color:c.muted,
+                textTransform:'uppercase', letterSpacing:0.5 }}>Email</Text>
+              <Text style={{ fontFamily:F.body, fontSize:14, color:c.ink,
+                fontWeight:'600', marginTop:2 }}>{user?.email}</Text>
+            </View>
           </View>
         </View>
 
-        {/* API debug */}
-        <View style={{ marginBottom:16 }}>
-          <ApiDebugCard />
-        </View>
-
+        {/* ── Sign out ── */}
         <SignOutButton />
       </ScrollView>
     </SafeAreaView>
@@ -555,83 +582,6 @@ function OrganiserProfile() {
 }
 
 // ── Sign out button (shared) ──────────────────────────────────────────────────
-
-// ── API Debug card ────────────────────────────────────────────────────────────
-
-function ApiDebugCard() {
-  const { theme } = useTheme();
-  const c = theme.colors;
-  const [ping, setPing] = useState<'idle'|'checking'|'ok'|'fail'>('idle');
-  const [latency, setLatency] = useState<number | null>(null);
-
-  const isProduction = RESOLVED_API_URL.includes('thescoreboard.in');
-
-  const checkConnection = async () => {
-    setPing('checking');
-    setLatency(null);
-    const start = Date.now();
-    try {
-      const res = await fetch(`${RESOLVED_API_URL}/public/home`, { method: 'GET' });
-      if (res.ok) {
-        setPing('ok');
-        setLatency(Date.now() - start);
-      } else {
-        setPing('fail');
-      }
-    } catch {
-      setPing('fail');
-    }
-  };
-
-  const pingColor = ping === 'ok' ? '#22c55e' : ping === 'fail' ? '#e53e3e' : ping === 'checking' ? '#D97706' : c.muted;
-
-  return (
-    <View style={{ backgroundColor:c.surface, borderRadius:12, borderWidth:1.5, borderColor:c.border, padding:16, gap:10 }}>
-      <Text style={{ fontFamily:F.bold, fontSize:11, color:c.muted, textTransform:'uppercase', letterSpacing:0.8 }}>
-        API Connection
-      </Text>
-
-      {/* Environment badge */}
-      <View style={{ flexDirection:'row', alignItems:'center', gap:8 }}>
-        <View style={{ borderRadius:6, paddingHorizontal:8, paddingVertical:4,
-          backgroundColor: isProduction ? '#22c55e18' : '#D9770618',
-          borderWidth:1, borderColor: isProduction ? '#22c55e40' : '#D9770640' }}>
-          <Text style={{ fontFamily:F.bold, fontSize:10, color: isProduction ? '#22c55e' : '#D97706' }}>
-            {isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}
-          </Text>
-        </View>
-      </View>
-
-      {/* URL */}
-      <Text style={{ fontFamily:F.body, fontSize:11, color:c.muted }} numberOfLines={1}>
-        {RESOLVED_API_URL}
-      </Text>
-
-      {/* Ping result */}
-      {ping !== 'idle' && (
-        <View style={{ flexDirection:'row', alignItems:'center', gap:6 }}>
-          <View style={{ width:8, height:8, borderRadius:4, backgroundColor: pingColor }} />
-          <Text style={{ fontFamily:F.bold, fontSize:12, color: pingColor }}>
-            {ping === 'checking' ? 'Checking…'
-              : ping === 'ok' ? `Connected · ${latency}ms`
-              : 'Failed — API unreachable'}
-          </Text>
-        </View>
-      )}
-
-      <TouchableOpacity
-        onPress={checkConnection}
-        disabled={ping === 'checking'}
-        style={{ borderRadius:8, borderWidth:1.5, borderColor:c.border,
-          paddingVertical:9, alignItems:'center', opacity: ping === 'checking' ? 0.6 : 1 }}
-      >
-        <Text style={{ fontFamily:F.bold, fontSize:12, color:c.ink }}>
-          {ping === 'checking' ? 'Checking…' : 'Test Connection'}
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
 
 function SignOutButton() {
   const { theme } = useTheme();
