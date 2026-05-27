@@ -5,7 +5,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Alert,
-  ActivityIndicator, Share, RefreshControl, TextInput, Platform, Modal,
+  ActivityIndicator, Share, RefreshControl, TextInput, Platform, Modal, StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';

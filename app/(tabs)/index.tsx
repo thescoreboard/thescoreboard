@@ -462,36 +462,52 @@ export default function HomeScreen() {
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const isFetchingRef = useRef(false);
-  const scrollRef     = useRef<ScrollView>(null);
-  const sectionY      = useRef<Record<string, number>>({});
+  // Version counter — each call gets a unique ID so stale results from
+  // a superseded load (e.g. auth hydrating mid-flight) are silently dropped.
+  const loadVersionRef = useRef(0);
+  const scrollRef      = useRef<ScrollView>(null);
+  const sectionY       = useRef<Record<string, number>>({});
 
   const load = useCallback(async () => {
-    if (isFetchingRef.current) return;
-    isFetchingRef.current = true;
+    const version = ++loadVersionRef.current;
     try {
-      const [homeRes, rv] = await Promise.all([apiGetHomepage(), getRecentlyViewed()]);
+      // ── Fire ALL three calls in parallel — no sequential waiting ──
+      // Personal data starts immediately, not after homepage returns.
+      const personalPromise = (loggedIn && token)
+        ? (isOrganiser ? apiGetDashboard(token) : apiGetMyTournaments(token))
+        : Promise.resolve(null);
+
+      const [homeRes, rv, personalData] = await Promise.all([
+        apiGetHomepage(),
+        getRecentlyViewed(),
+        personalPromise,
+      ]);
+
+      // Ignore stale results — a newer load has already started
+      // (e.g. auth hydrated while this request was in-flight)
+      if (version !== loadVersionRef.current) return;
+
       setData(homeRes);
       setRecents(rv);
-      if (loggedIn && token) {
-        try {
-          if (isOrganiser) {
-            // Organiser: fetch their own created tournaments from dashboard
-            const dash = await apiGetDashboard(token);
-            const orgs: any[] = dash?.orgs ?? [];
-            const all = orgs.flatMap((o: any) =>
-              (o.tournaments ?? []).map((t: any) => ({ ...t, org_name: o.name, org_id: o.org_id }))
-            );
-            setMyTourneys(all);
-          } else {
-            // Player: fetch tournaments they're registered in
-            const mt = await apiGetMyTournaments(token);
-            setMyTourneys(Array.isArray(mt) ? mt : mt?.tournaments ?? []);
-          }
-        } catch {}
+
+      if (personalData) {
+        if (isOrganiser) {
+          const orgs: any[] = personalData?.orgs ?? [];
+          setMyTourneys(orgs.flatMap((o: any) =>
+            (o.tournaments ?? []).map((t: any) => ({ ...t, org_name: o.name, org_id: o.org_id }))
+          ));
+        } else {
+          setMyTourneys(Array.isArray(personalData) ? personalData : personalData?.tournaments ?? []);
+        }
       }
     } catch {}
-    finally { isFetchingRef.current = false; setLoading(false); setRefreshing(false); }
+    finally {
+      // Only update loading state if this is still the latest load
+      if (version === loadVersionRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    }
   }, [loggedIn, token, isOrganiser]);
 
   useEffect(() => { load(); }, [load]);

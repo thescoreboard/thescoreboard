@@ -17,7 +17,7 @@ import MatchCard from '../../src/components/shared/MatchCard';
 import RoadToFinal from '../../src/components/shared/RoadToFinal';
 import { F, SPORT_COLORS, SPORT_LABELS, STATUS_LABELS, STATUS_COLORS } from '../../src/theme';
 import { computeStandings } from '../../src/utils/standings';
-import { STAGE_ORDER } from '../../src/utils/match';
+import { STAGE_ORDER, STAGE_LABELS } from '../../src/utils/match';
 import { addRecentlyViewed } from '../../src/utils/recentlyViewed';
 
 // ── Ticker bar (live scores strip) ───────────────────────────────────
@@ -122,15 +122,59 @@ const sn = StyleSheet.create({
 // ── Fixtures section ─────────────────────────────────────────────
 function FixturesSection({ events, sportKey }: any) {
   const { theme } = useTheme();
-  const allMatches = events.flatMap((ev: any) => ev.all_matches ?? []);
   const c = theme.colors;
+  const [filter, setFilter] = useState<string>('all');
 
-  const stageIdx = (m: any) => { const i = STAGE_ORDER.indexOf(m.stage ?? ''); return i === -1 ? 999 : i; };
-  const byStage  = (arr: any[]) => [...arr].sort((a, b) => stageIdx(a) - stageIdx(b));
+  const allMatches = events.flatMap((ev: any) => ev.all_matches ?? []);
+  const multiEvent = events.length > 1;
 
-  const live     = byStage(allMatches.filter((m: any) => m.status === 'live'));
-  const upcoming = byStage(allMatches.filter((m: any) => m.status !== 'done' && m.status !== 'live'));
-  const done     = byStage(allMatches.filter((m: any) => m.status === 'done'));
+  // Sort: live first → by stage order → done last
+  function sortMatches(matches: any[]) {
+    return [...matches].sort((a: any, b: any) => {
+      const aLive = a.status === 'live' ? 0 : 1;
+      const bLive = b.status === 'live' ? 0 : 1;
+      if (aLive !== bLive) return aLive - bLive;
+      const aDone = a.status === 'done' ? 1 : 0;
+      const bDone = b.status === 'done' ? 1 : 0;
+      if (aDone !== bDone) return aDone - bDone;
+      const aIdx = STAGE_ORDER.indexOf(a.stage ?? '');
+      const bIdx = STAGE_ORDER.indexOf(b.stage ?? '');
+      if (aIdx !== bIdx) return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
+      return (a.round ?? 0) - (b.round ?? 0);
+    });
+  }
+
+  // Apply active filter
+  function applyFilter(matches: any[]) {
+    if (filter === 'all')      return matches;
+    if (filter === 'live')     return matches.filter((m: any) => m.status === 'live');
+    if (filter === 'upcoming') return matches.filter((m: any) => m.status !== 'live' && m.status !== 'done');
+    if (filter === 'done')     return matches.filter((m: any) => m.status === 'done');
+    return matches.filter((m: any) => m.stage === filter);
+  }
+
+  // Build pills from actual data — only show pills that have matches
+  const hasLive     = allMatches.some((m: any) => m.status === 'live');
+  const hasUpcoming = allMatches.some((m: any) => m.status !== 'live' && m.status !== 'done');
+  const hasDone     = allMatches.some((m: any) => m.status === 'done');
+  // Collect stages present in the data, in display order
+  const presentStages = STAGE_ORDER.filter(s => allMatches.some((m: any) => m.stage === s));
+
+  const pills: Array<{ id: string; label: string; count: number; isLive?: boolean; isStage?: boolean }> = [
+    { id: 'all',     label: 'All',       count: allMatches.length },
+    ...(hasLive     ? [{ id: 'live',     label: '● Live',    count: allMatches.filter((m: any) => m.status === 'live').length, isLive: true }] : []),
+    ...(hasUpcoming ? [{ id: 'upcoming', label: 'Upcoming',  count: allMatches.filter((m: any) => m.status !== 'live' && m.status !== 'done').length }] : []),
+    ...(hasDone     ? [{ id: 'done',     label: 'Completed', count: allMatches.filter((m: any) => m.status === 'done').length }] : []),
+    // Stage pills — only when multiple stages are present
+    ...(presentStages.length > 1
+      ? presentStages.map(s => ({
+          id: s,
+          label: STAGE_LABELS[s] || s,
+          count: allMatches.filter((m: any) => m.stage === s).length,
+          isStage: true,
+        }))
+      : []),
+  ];
 
   if (allMatches.length === 0) {
     return (
@@ -141,31 +185,93 @@ function FixturesSection({ events, sportKey }: any) {
   }
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }}>
-      {live.length > 0 && (
-        <>
-          <Text style={[fs.label, { color: c.primary }]}>LIVE</Text>
-          {live.map((m: any) => <MatchCard key={m.match_id} match={m} sportKey={sportKey} />)}
-        </>
+    <View style={{ flex: 1 }}>
+
+      {/* ── Filter pill bar ───────────────────────────────── */}
+      {pills.length > 1 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ flexShrink: 0, borderBottomWidth: 1, borderBottomColor: c.border }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 10, gap: 6, alignItems: 'center' }}>
+          {pills.map((pill, i) => {
+            const active = filter === pill.id;
+            // Show a thin vertical divider before the first stage pill
+            const showDivider = pill.isStage && (i === 0 || !(pills[i - 1] as any)?.isStage);
+            return (
+              <React.Fragment key={pill.id}>
+                {showDivider && (
+                  <View style={{ width: 1, height: 18, backgroundColor: c.border, marginHorizontal: 2 }} />
+                )}
+                <TouchableOpacity
+                  onPress={() => setFilter(pill.id)}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 5,
+                    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
+                    backgroundColor: active
+                      ? (pill.isLive ? c.primary : c.ink)
+                      : 'transparent',
+                    borderWidth: active ? 0 : 1.5,
+                    borderColor: c.border,
+                  }}>
+                  <Text style={{
+                    fontFamily: 'SpaceGrotesk_700Bold', fontSize: 10, fontWeight: '800',
+                    letterSpacing: 0.8, textTransform: 'uppercase',
+                    color: active ? '#fff' : c.muted,
+                  }}>
+                    {pill.label}
+                  </Text>
+                  {pill.count > 0 && (
+                    <View style={{
+                      backgroundColor: active ? 'rgba(255,255,255,0.25)' : c.elevated,
+                      borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1,
+                    }}>
+                      <Text style={{ fontSize: 9, fontWeight: '800', color: active ? '#fff' : c.muted }}>
+                        {pill.count}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </React.Fragment>
+            );
+          })}
+        </ScrollView>
       )}
-      {upcoming.length > 0 && (
-        <>
-          <Text style={[fs.label, { color: c.muted, marginTop: live.length > 0 ? 8 : 0 }]}>UPCOMING</Text>
-          {upcoming.map((m: any) => <MatchCard key={m.match_id} match={m} sportKey={sportKey} />)}
-        </>
-      )}
-      {done.length > 0 && (
-        <>
-          <Text style={[fs.label, { color: c.muted, marginTop: (live.length > 0 || upcoming.length > 0) ? 8 : 0 }]}>COMPLETED</Text>
-          {done.map((m: any) => <MatchCard key={m.match_id} match={m} sportKey={sportKey} />)}
-        </>
-      )}
-    </ScrollView>
+
+      {/* ── Match list ────────────────────────────────────── */}
+      <ScrollView contentContainerStyle={{ padding: 16 }}>
+        {events.map((ev: any) => {
+          const sorted  = sortMatches(ev.all_matches ?? []);
+          const matches = applyFilter(sorted);
+          if (matches.length === 0 && multiEvent) return null;
+          if (matches.length === 0) {
+            return (
+              <View key={ev.event_id} style={{ alignItems: 'center', paddingVertical: 32 }}>
+                <Text style={{ color: c.muted, fontSize: 13 }}>No matches match this filter.</Text>
+              </View>
+            );
+          }
+          return (
+            <View key={ev.event_id} style={{ marginBottom: multiEvent ? 24 : 0 }}>
+              {multiEvent && (
+                <Text style={{
+                  fontFamily: 'SpaceGrotesk_700Bold', fontSize: 11, fontWeight: '800',
+                  color: c.muted, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 8,
+                }}>
+                  {ev.name}
+                </Text>
+              )}
+              {matches.map((m: any) => (
+                <MatchCard key={m.match_id} match={m} sportKey={ev.sport_key ?? sportKey} />
+              ))}
+            </View>
+          );
+        })}
+      </ScrollView>
+
+    </View>
   );
 }
-const fs = StyleSheet.create({
-  label: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginBottom: 8, textTransform: 'uppercase' },
-});
 
 // ── Standings section ─────────────────────────────────────────────
 function StandingsSection({ events }: any) {
@@ -477,26 +583,13 @@ export default function TournamentPublicScreen() {
         {/* Ticker bar — only shown when matches are live */}
         <TickerBar matches={liveMatches} />
 
-        {/* Back + share */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10 }}>
+        {/* Back */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 }}>
           <TouchableOpacity
             onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)' as any)}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6, paddingRight: 12 }}>
             <Text style={{ color: c.muted, fontSize: 18, lineHeight: 20 }}>←</Text>
             <Text style={{ fontFamily: F.bold, fontSize: 13, fontWeight: '600', color: c.muted }}>Back</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => Share.share({
-              title:   t.name,
-              message: `${t.name} — Live on TheScoreBoard\n${shareUrl.tournament(t.slug)}`,
-            })}
-            style={{
-              flexDirection: 'row', alignItems: 'center', gap: 5,
-              borderWidth: 1.5, borderColor: c.primary,
-              borderRadius: 8, paddingHorizontal: 14, paddingVertical: 7,
-            }}>
-            <Text style={{ fontFamily: F.bold, fontSize: 12, fontWeight: '700', color: c.primary }}>Share</Text>
-            <Text style={{ fontSize: 12, color: c.primary, fontWeight: '700' }}>↗</Text>
           </TouchableOpacity>
         </View>
 
@@ -576,6 +669,23 @@ export default function TournamentPublicScreen() {
             </View>
           )}
 
+
+          {/* Share button — static in hero */}
+          <TouchableOpacity
+            onPress={() => Share.share({
+              title:   t.name,
+              message: `${t.name} — Live on TheScoreBoard\n${shareUrl.tournament(t.slug)}`,
+            })}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 7,
+              alignSelf: 'flex-start', marginTop: 14,
+              borderWidth: 1.5, borderColor: c.border,
+              borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8,
+              backgroundColor: c.elevated,
+            }}>
+            <Text style={{ fontSize: 13, color: c.ink }}>{'↗'}</Text>
+            <Text style={{ fontFamily: F.bold, fontSize: 13, fontWeight: '700', color: c.ink }}>Share</Text>
+          </TouchableOpacity>
 
           {/* Register button */}
           {canRegister && (
