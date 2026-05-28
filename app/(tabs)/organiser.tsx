@@ -126,7 +126,7 @@ function PlayerMatchesTab() {
       {/* Header */}
       <View style={{ flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingHorizontal:16, height:56, borderBottomWidth:1.5, borderBottomColor:c.border }}>
         <Text style={{ fontFamily:F.display, fontSize:14, color:c.ink, letterSpacing:-0.3 }}>My Tournaments</Text>
-        <TouchableOpacity onPress={() => router.push('/explore')}
+        <TouchableOpacity onPress={() => router.push('/(tabs)/explore' as any)}
           style={{ borderWidth:1.5, borderColor:c.border, borderRadius:8, paddingHorizontal:12, paddingVertical:7 }}>
           <Text style={{ fontFamily:F.bold, fontSize:11, color:c.muted }}>Explore</Text>
         </TouchableOpacity>
@@ -144,7 +144,7 @@ function PlayerMatchesTab() {
             <Text style={{ fontFamily:F.body, fontSize:14, color:c.muted, textAlign:'center', lineHeight:20 }}>
               Register for a tournament to see it here.
             </Text>
-            <TouchableOpacity onPress={() => router.push('/explore')}
+            <TouchableOpacity onPress={() => router.push('/(tabs)/explore' as any)}
               style={{ backgroundColor:c.primary, borderRadius:8, paddingVertical:12, paddingHorizontal:28, marginTop:4 }}>
               <Text style={{ fontFamily:F.display, color:'#fff', fontSize:12, letterSpacing:0.5, textTransform:'uppercase' }}>Explore Tournaments</Text>
             </TouchableOpacity>

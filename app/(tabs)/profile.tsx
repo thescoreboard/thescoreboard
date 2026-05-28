@@ -416,7 +416,7 @@ function PlayerDashboard() {
               <Text style={{ fontFamily:F.body, fontSize:14, color:c.muted, textAlign:'center' }}>
                 No tournaments yet. Register for one to get started!
               </Text>
-              <TouchableOpacity onPress={() => router.push('/explore')}
+              <TouchableOpacity onPress={() => router.push('/(tabs)/explore' as any)}
                 style={{ marginTop:12, backgroundColor:c.primary, borderRadius:8,
                   paddingVertical:10, paddingHorizontal:20 }}>
                 <Text style={{ fontFamily:F.display, color:'#fff', fontSize:11, letterSpacing:0.5, textTransform:'uppercase' }}>
@@ -516,7 +516,7 @@ function OrganiserProfile() {
     );
   }
 
-  const displayName = user?.name ?? profile?.name ?? 'Organiser';
+  const displayName = user?.name ?? 'Organiser';
 
   return (
     <SafeAreaView style={{ flex:1, backgroundColor:c.bg }}>
@@ -587,9 +587,16 @@ function SignOutButton() {
   const { theme } = useTheme();
   const c = theme.colors;
   const { clearToken } = useAuthStore();
+  const router = useRouter();
+
+  const handleSignOut = async () => {
+    await clearToken();
+    // Reset to tabs — the LoginPrompt will show since isLoggedIn() is now false
+    router.replace('/(tabs)' as any);
+  };
 
   return (
-    <TouchableOpacity onPress={() => clearToken()}
+    <TouchableOpacity onPress={handleSignOut}
       style={{ backgroundColor:c.surface, borderRadius:12, borderWidth:1.5,
         borderColor:'#e53e3e33', padding:16, alignItems:'center' }}>
       <Text style={{ fontFamily:F.bold, fontSize:14, color:'#e53e3e' }}>Sign Out</Text>

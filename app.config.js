@@ -7,6 +7,14 @@
 const API_URL = 'https://api.thescoreboard.in/api';
 const WS_URL  = 'wss://api.thescoreboard.in/api';
 
+// Derive the reverse-client-ID scheme used by Android OAuth redirect.
+// e.g. 876140482091-xxx.apps.googleusercontent.com
+//   → com.googleusercontent.apps.876140482091-xxx
+const ANDROID_CLIENT_ID = process.env.GOOGLE_CLIENT_ID_ANDROID
+  || '876140482091-28svan5do1odatprdhn0jq8fmfca9hp9.apps.googleusercontent.com';
+const ANDROID_OAUTH_SCHEME = 'com.googleusercontent.apps.'
+  + ANDROID_CLIENT_ID.replace('.apps.googleusercontent.com', '');
+
 /** @type {import('expo/config').ExpoConfig} */
 module.exports = {
   expo: {
@@ -43,6 +51,16 @@ module.exports = {
         'android.permission.RECORD_AUDIO',
         'android.permission.INTERNET',
       ],
+      // Intent filter so Android can intercept Google's OAuth redirect back to
+      // the app. Google uses the reverse of the Android client ID as the scheme:
+      //   com.googleusercontent.apps.{client_id_prefix}:/oauth2redirect/google
+      intentFilters: [
+        {
+          action: 'VIEW',
+          data: [{ scheme: ANDROID_OAUTH_SCHEME }],
+          category: ['BROWSABLE', 'DEFAULT'],
+        },
+      ],
     },
     web: {
       bundler: 'metro',
@@ -62,29 +80,19 @@ module.exports = {
     extra: {
       apiUrl: API_URL,
       wsUrl:  WS_URL,
-      // ── YouTube / Google OAuth ───────────────────────────────────────────
-      // expo-auth-session uses a browser redirect flow, which REQUIRES a
-      // "Web application" OAuth client — NOT an Android client.
-      // Android OAuth clients do not support redirect URIs and will cause
-      // useAuthRequest() to return null, disabling the Google button.
+      // ── Google OAuth ─────────────────────────────────────────────────────
+      // expo-auth-session on Android uses the Android OAuth client with a
+      // reverse-client-ID redirect URI:
+      //   com.googleusercontent.apps.{client_prefix}:/oauth2redirect/google
+      // The intent filter for this scheme is registered above in
+      // android.intentFilters so Android can intercept Google's redirect.
       //
       // Setup (console.cloud.google.com → APIs & Services → Credentials):
-      //   1. Create OAuth 2.0 Client ID → type: Web application
-      //      Name: "TheScoreBoard Mobile"
-      //      Authorized redirect URIs:
-      //        https://auth.expo.io/@YOUR_EXPO_USERNAME/thescoreboard
-      //        thescoreboard://
-      //   2. Paste the resulting client ID below (or set env var)
-      //   3. Enable: YouTube Data API v3
-      //   4. OAuth consent screen scopes: .../auth/youtube.upload, .../auth/youtube
-      //
-      // The Android client ID (in .env) is only needed if you switch to
-      // @react-native-google-signin/google-signin (native SDK approach).
-      googleClientIdAndroid: process.env.GOOGLE_CLIENT_ID_ANDROID || '876140482091-28svan5do1odatprdhn0jq8fmfca9hp9.apps.googleusercontent.com',
-      // Web application client ID — used by expo-auth-session on BOTH web and
-      // native Android (redirect flow). Must have "thescoreboard://" added as
-      // an Authorized Redirect URI in Google Cloud Console.
-      googleClientIdWeb:     process.env.GOOGLE_CLIENT_ID_WEB     || '876140482091-5vc5130v75fa038i38nro0la6gdlmr2r.apps.googleusercontent.com',
+      //   Android client — package: in.thescoreboard.app
+      //                    SHA-1: your release keystore SHA-1 fingerprint
+      //   Web client     — used for the web version of the app only
+      googleClientIdAndroid: ANDROID_CLIENT_ID,
+      googleClientIdWeb:     process.env.GOOGLE_CLIENT_ID_WEB || '876140482091-5vc5130v75fa038i38nro0la6gdlmr2r.apps.googleusercontent.com',
       eas: {
         projectId: "3e544007-87d3-4481-bab0-4ab594a4f08e"
       }

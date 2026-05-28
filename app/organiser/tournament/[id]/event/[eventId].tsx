@@ -773,7 +773,7 @@ export default function EventWorkspaceScreen() {
   const handleSetConfig = async (matchId: number, setsToWin: number) => {
     try {
       await apiUpdateMatchStatus(token!, matchId, { status: 'scheduled', sets_to_win: setsToWin });
-      loadData();
+      load();
     } catch (e: any) {
       Alert.alert('Error', e?.message ?? 'Could not update sets');
     }

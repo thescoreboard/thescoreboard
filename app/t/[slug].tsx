@@ -462,7 +462,8 @@ function TeamsSection({ events, theme }: any) {
 
 // ── Main screen ───────────────────────────────────────────────────
 export default function TournamentPublicScreen() {
-  const { slug }     = useLocalSearchParams<{ slug: string }>();
+  const { slug: rawSlug } = useLocalSearchParams();
+  const slug = Array.isArray(rawSlug) ? rawSlug[0] : rawSlug as string;
   const { theme }    = useTheme();
   const router       = useRouter();
   const c            = theme.colors;

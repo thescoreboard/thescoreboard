@@ -154,9 +154,9 @@ export const apiConfigureEvent = (token: string, eId: number, d: any) =>
 
 // ── Players ─────────────────────────────────────────────────────
 export const apiCreatePlayer  = (token: string, d: any, orgId?: number) =>
-  request('POST',   `/players/${orgId ? `?org_id=${orgId}` : ''}`, token, d);
+  request('POST',   `/players${orgId ? `?org_id=${orgId}` : ''}`, token, d);
 export const apiGetPlayers    = (token: string, orgId?: number) =>
-  request('GET',    `/players/${orgId ? `?org_id=${orgId}` : ''}`, token);
+  request('GET',    `/players${orgId ? `?org_id=${orgId}` : ''}`, token);
 export const apiDeletePlayer  = (token: string, id: number) =>
   request('DELETE', `/players/${id}`, token);
 export const apiAddPlayerToEvent = (token: string, eId: number, pId: number, gId?: number, seed?: number) => {

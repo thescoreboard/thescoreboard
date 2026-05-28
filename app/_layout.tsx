@@ -28,7 +28,7 @@ function RootLayoutInner() {
       <StatusBar style={theme.isDark ? 'light' : 'dark'} />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)"     options={{ headerShown: false }} />
-        <Stack.Screen name="(auth)"     options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="(auth)"     options={{ headerShown: false }} />
         <Stack.Screen name="t/[slug]"   options={{ headerShown: false }} />
         <Stack.Screen name="register/[slug]" options={{ headerShown: false }} />
         <Stack.Screen name="organiser"   options={{ headerShown: false }} />
@@ -50,9 +50,11 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    Promise.all([hydrateAuth(), hydrateTheme()]).then(() => {
-      if (fontsLoaded) SplashScreen.hideAsync();
-    });
+    Promise.all([hydrateAuth(), hydrateTheme()]);
+  }, []);
+
+  useEffect(() => {
+    if (fontsLoaded) SplashScreen.hideAsync();
   }, [fontsLoaded]);
 
   if (!fontsLoaded) return null;

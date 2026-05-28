@@ -10,6 +10,7 @@ import { useTheme }    from '../../src/hooks/useTheme';
 import { useAuthStore } from '../../src/store/auth';
 import { useGoogleSignIn } from '../../src/hooks/useGoogleSignIn';
 import { apiLogin, apiGoogleAuth } from '../../src/api/client';
+import { storage } from '../../src/utils/storage';
 import { F } from '../../src/theme';
 
 export default function LoginScreen() {
@@ -24,15 +25,15 @@ export default function LoginScreen() {
   const [gLoading, setGLoading] = useState(false);
 
   // ── Google OAuth (native only — web stub returns null/null/noop) ──────────
-  // expo-auth-session uses a browser redirect flow which requires a Web
-  // application OAuth client ID — NOT an Android client ID.
-  // Set GOOGLE_CLIENT_ID_WEB in your environment (or app.config.js extra)
-  // to the "Web application" client ID from Google Cloud Console.
+  // expo-auth-session v5 REQUIRES androidClientId on Android — if it is
+  // undefined the hook throws during render and crashes the whole screen.
+  // Both client IDs come from app.config.js extra (Google Cloud Console):
+  //   webClientId     → "Web application" OAuth client
+  //   androidClientId → "Android" OAuth client (package + SHA-1 fingerprint)
   const extra = Constants.expoConfig?.extra ?? {};
   const [request, response, promptAsync] = useGoogleSignIn({
-    webClientId: extra.googleClientIdWeb || undefined,
-    // androidClientId is intentionally NOT passed — Android clients don't
-    // support redirect URIs and will make useAuthRequest return null.
+    webClientId:     extra.googleClientIdWeb     || undefined,
+    androidClientId: extra.googleClientIdAndroid || undefined,
   });
 
   const isNative = Platform.OS !== 'web';
@@ -58,15 +59,19 @@ export default function LoginScreen() {
 
   // ── Post-login routing ────────────────────────────────────────────────────
   const afterLogin = async () => {
-    const freshOnboarded = useAuthStore.getState().onboarded;
-    const { storage } = await import('../../src/utils/storage');
-    const next = await storage.getItem('tsb_next');
-    if (next) {
-      await storage.deleteItem('tsb_next');
-      router.replace(next as any);
-    } else if (!freshOnboarded) {
-      router.replace('/onboarding' as any);
-    } else {
+    try {
+      const freshOnboarded = useAuthStore.getState().onboarded;
+      const next = await storage.getItem('tsb_next');
+      if (next) {
+        await storage.deleteItem('tsb_next');
+        router.replace(next as any);
+      } else if (!freshOnboarded) {
+        router.replace('/onboarding' as any);
+      } else {
+        router.replace('/(tabs)' as any);
+      }
+    } catch {
+      // Fallback: always get the user to the app even if routing logic fails
       router.replace('/(tabs)' as any);
     }
   };

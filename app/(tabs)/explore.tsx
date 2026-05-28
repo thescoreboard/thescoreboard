@@ -356,7 +356,7 @@ export default function ExploreScreen() {
                 onPress={() => setStatusFilter(key)}
                 style={({ pressed }) => [
                   s.segmentItem,
-                  active && [s.segmentActive, { backgroundColor: c.surface, shadowColor: c.ink }],
+                  active && [s.segmentActive, { backgroundColor: c.surface }],
                   { opacity: pressed ? 0.7 : 1 },
                 ]}
               >
@@ -478,7 +478,7 @@ const s = StyleSheet.create({
   // Status segmented control
   segmentWrap:   { flexDirection:'row', marginHorizontal:16, marginBottom:10, borderRadius:10, borderWidth:1.5, overflow:'hidden', padding:3 },
   segmentItem:   { flex:1, alignItems:'center', justifyContent:'center', flexDirection:'row', gap:4, paddingVertical:8, borderRadius:8 },
-  segmentActive: { shadowOffset:{ width:0, height:1 }, shadowOpacity:0.08, shadowRadius:2, elevation:2 },
+  segmentActive: { elevation:2 },
   segmentDot:    { width:5, height:5, borderRadius:3 },
   segmentText:   { fontSize:11, fontWeight:'600' },
 

@@ -28,7 +28,8 @@ export default function RegisterScreen() {
     try {
       const data = await apiRegister({ name: name.trim(), email: email.trim().toLowerCase(), password, phone: phone.trim()||null });
       await setToken(data.access_token);
-      router.replace('/(tabs)/profile');
+      const onboarded = useAuthStore.getState().onboarded;
+      router.replace(!onboarded ? '/onboarding' : '/(tabs)' as any);
     } catch (e: any) { setError(e.message ?? 'Registration failed'); }
     setLoading(false);
   };

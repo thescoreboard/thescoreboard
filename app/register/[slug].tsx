@@ -70,7 +70,11 @@ export default function RegisterScreen() {
         } else {
           setStep('auth');
         }
-      } catch {}
+      } catch (e: any) {
+        Alert.alert('Error', e?.message ?? 'Could not load tournament');
+        setLoading(false);
+        return;
+      }
       setLoading(false);
     })();
   }, [slug, token]);

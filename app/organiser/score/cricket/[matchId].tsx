@@ -90,7 +90,7 @@ export default function CricketScorerScreen() {
   const [st, setSt] = useState({ runs: 0, wickets: 0, balls: 0, log: [] as string[] });
 
   const loadMatch = useCallback(async () => {
-    if (!params.tournamentId) return;
+    if (!params.tournamentId) { setLoading(false); return; }
     try {
       const ws = await apiGetWorkspace(token!, parseInt(params.tournamentId));
       const ev = (ws.events ?? []).find((e: any) => e.event_id === parseInt(params.eventId ?? '0'));

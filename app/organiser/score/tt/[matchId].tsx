@@ -45,7 +45,7 @@ export default function TTScorerScreen() {
   const [isPaused,    setIsPaused]    = useState(false);
 
   const loadMatch = useCallback(async () => {
-    if (!params.tournamentId) return;
+    if (!params.tournamentId) { setLoading(false); return; }
     try {
       const ws = await apiGetWorkspace(token!, parseInt(params.tournamentId));
       const ev = (ws.events ?? []).find((e: any) =>
