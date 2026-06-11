@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { useAuthStore } from '../../../../src/store/auth';
 import {
-  apiUpdateMatchStatus, apiUpdateScore, apiFinishMatch, apiWalkoverMatch, apiGetWorkspace,
+  apiUpdateMatchStatus, apiUpdateScore, apiFinishMatch, apiWalkoverMatch, apiGetMatch,
 } from '../../../../src/api/client';
 
 const C = {
@@ -62,11 +62,8 @@ export default function FootballScorerScreen() {
   const [isPaused,   setIsPaused]   = useState(false);
 
   const loadMatch = useCallback(async () => {
-    if (!params.tournamentId) { setLoading(false); return; }
     try {
-      const ws = await apiGetWorkspace(token!, parseInt(params.tournamentId));
-      const ev = (ws.events ?? []).find((e: any) => e.event_id === parseInt(params.eventId ?? '0'));
-      const m  = (ev?.matches ?? []).find((m: any) => m.match_id === parseInt(matchId));
+      const m = await apiGetMatch(token!, parseInt(matchId));
       if (m) {
         setMatch(m);
         const cs   = (m.sets ?? []).find((s: any) => !s.is_complete) ?? (m.sets ?? [])[0];
@@ -81,7 +78,7 @@ export default function FootballScorerScreen() {
       }
     } catch {}
     setLoading(false);
-  }, [matchId, params.tournamentId, params.eventId, token]);
+  }, [matchId, token]);
 
   useFocusEffect(useCallback(() => { loadMatch(); }, [loadMatch]));
 
@@ -294,7 +291,7 @@ export default function FootballScorerScreen() {
                   borderWidth: 1, borderColor: isLeading && !isDone ? C.orange + '44' : C.border }}>
                   <Text style={{ fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 2,
                     color: isLeading && !isDone ? C.orange : C.mutedHi, marginBottom: 4 }} numberOfLines={1}>{name}</Text>
-                  <Text style={{ fontSize: 88, fontWeight: '900', lineHeight: 92,
+                  <Text style={{ fontSize: 88, fontWeight: '900', lineHeight: 92, includeFontPadding: false,
                     color: matchWinner === pos ? C.gold : isDraw && !isDone ? C.mutedHi : C.ink }}>
                     {goals}
                   </Text>

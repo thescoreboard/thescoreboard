@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { useTheme } from '../../src/hooks/useTheme';
 import { useAuthStore } from '../../src/store/auth';
 import { apiRegister } from '../../src/api/client';
+import { storage } from '../../src/utils/storage';
 import { F } from '../../src/theme';
 
 export default function RegisterScreen() {
@@ -28,6 +29,15 @@ export default function RegisterScreen() {
     try {
       const data = await apiRegister({ name: name.trim(), email: email.trim().toLowerCase(), password, phone: phone.trim()||null });
       await setToken(data.access_token);
+
+      // Consume the CTA intent set before registration; default to 'player' for new accounts
+      const intent = await storage.getItem('tsb_intent');
+      if (intent) await storage.deleteItem('tsb_intent');
+      const { setMode } = useAuthStore.getState();
+      // New accounts have no org role yet, so we always set player mode even if
+      // intent is 'organiser' — they'll be prompted to create an org after onboarding.
+      await setMode((intent as any) || 'player');
+
       const onboarded = useAuthStore.getState().onboarded;
       router.replace(!onboarded ? '/onboarding' : '/(tabs)' as any);
     } catch (e: any) { setError(e.message ?? 'Registration failed'); }
@@ -72,8 +82,20 @@ export default function RegisterScreen() {
 
           {error ? <Text style={[s.errText, { fontFamily: F.semi }]}>{error}</Text> : null}
 
+          {/* Legal agreement */}
+          <Text style={{ fontFamily: F.body, fontSize: 12, color: c.muted, textAlign: 'center', marginTop: 20, lineHeight: 18 }}>
+            By creating an account you agree to our{' '}
+            <Text style={{ color: c.primary, fontWeight: '600' }} onPress={() => router.push('/terms' as any)}>
+              Terms of Service
+            </Text>
+            {' '}and{' '}
+            <Text style={{ color: c.primary, fontWeight: '600' }} onPress={() => router.push('/privacy' as any)}>
+              Privacy Policy
+            </Text>.
+          </Text>
+
           <TouchableOpacity onPress={handleRegister} disabled={loading}
-            style={[s.btn, { backgroundColor: c.primary, opacity: loading?0.6:1, marginTop: 24 }]}>
+            style={[s.btn, { backgroundColor: c.primary, opacity: loading?0.6:1, marginTop: 14 }]}>
             <Text style={[s.btnText, { fontFamily: F.display }]}>
               {loading ? 'Creating…' : 'Create Account'}
             </Text>

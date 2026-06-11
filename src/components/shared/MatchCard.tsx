@@ -180,11 +180,11 @@ function CricketCard({ m, theme }: any) {
   return (
     <View>
       <View style={mc.row}>
-        <Text style={[mc.pName, { color: m.player_1?.is_winner ? theme.colors.ink : theme.colors.muted }]} numberOfLines={1}>{team1}</Text>
+        <Text style={[mc.pName, { color: m.player_1?.is_winner ? theme.colors.ink : theme.colors.muted, flex: 1, marginRight: 8 }]} numberOfLines={1}>{team1}</Text>
         {runs1 != null ? <Text style={[mc.score, { color: theme.colors.ink }]}>{runs1}/{wkts1 ?? 0}</Text> : <Text style={[mc.score, { color: theme.colors.muted }]}>—</Text>}
       </View>
       <View style={mc.row}>
-        <Text style={[mc.pName, { color: m.player_2?.is_winner ? theme.colors.ink : theme.colors.muted }]} numberOfLines={1}>{team2}</Text>
+        <Text style={[mc.pName, { color: m.player_2?.is_winner ? theme.colors.ink : theme.colors.muted, flex: 1, marginRight: 8 }]} numberOfLines={1}>{team2}</Text>
         {runs2 != null ? <Text style={[mc.score, { color: theme.colors.ink }]}>{runs2}/{wkts2 ?? 0}</Text> : <Text style={[mc.score, { color: theme.colors.muted }]}>—</Text>}
       </View>
       {ls.runs != null && m.status === 'live' && (
@@ -199,13 +199,13 @@ function CricketCard({ m, theme }: any) {
 const mc = StyleSheet.create({
   row:      { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginBottom: 2 },
   pName:    { fontSize: 14 },
-  score:    { fontSize: 20, fontWeight: '900', minWidth: 28, textAlign: 'right' },
+  score:    { fontSize: 20, fontWeight: '900', minWidth: 28, textAlign: 'right', includeFontPadding: false },
   sets:     { flexDirection:'row', gap: 4, marginTop: 6, flexWrap:'wrap' },
   setChip:  { borderWidth:1, borderRadius:6, paddingHorizontal:6, paddingVertical:2 },
   serveDot: { width: 6, height: 6, borderRadius: 3, flexShrink: 0 },
   ftRow:    { flexDirection:'row', alignItems:'center', gap: 6, width:'100%' },
   ftName:   { flex:1, fontSize:14, fontWeight:'600' },
-  ftScore:  { fontSize:24, fontWeight:'900', minWidth:72, textAlign:'center', letterSpacing:-0.5 },
+  ftScore:  { fontSize:24, fontWeight:'900', minWidth:72, textAlign:'center', letterSpacing:-0.5, includeFontPadding: false },
 });
 
 // ── Main dispatcher ──────────────────────────────────────────────

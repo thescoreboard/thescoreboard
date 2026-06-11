@@ -18,7 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Constants from 'expo-constants';
 import { useAuthStore } from '../../../../src/store/auth';
-import { apiGetWorkspace } from '../../../../src/api/client';
+import { apiGetMatch } from '../../../../src/api/client';
 import { useYouTubeStream } from '../../../../src/hooks/useYouTubeStream';
 
 // ── Platform detection ────────────────────────────────────────────────────────
@@ -94,19 +94,12 @@ export default function StreamScreen() {
 
   // ── Load match data for score overlay ───────────────────────────────────
   const loadMatch = useCallback(async () => {
-    if (!params.tournamentId) { setLoadingMatch(false); return; }
     try {
-      const ws = await apiGetWorkspace(token!, parseInt(params.tournamentId));
-      const ev = (ws.events ?? []).find((e: any) =>
-        e.event_id === parseInt(params.eventId ?? '0')
-      );
-      const m = (ev?.matches ?? []).find((m: any) =>
-        m.match_id === parseInt(params.matchId)
-      );
+      const m = await apiGetMatch(token!, parseInt(params.matchId));
       if (m) setMatch(m);
     } catch {}
     setLoadingMatch(false);
-  }, [params.matchId, params.tournamentId, params.eventId, token]);
+  }, [params.matchId, token]);
 
   useEffect(() => { loadMatch(); }, [loadMatch]);
 

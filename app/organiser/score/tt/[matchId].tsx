@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { useAuthStore } from '../../../../src/store/auth';
 import {
-  apiUpdateMatchStatus, apiUpdateScore, apiUndoSet, apiWalkoverMatch, apiGetWorkspace,
+  apiUpdateMatchStatus, apiUpdateScore, apiUndoSet, apiWalkoverMatch, apiGetMatch,
 } from '../../../../src/api/client';
 
 const C = {
@@ -45,21 +45,14 @@ export default function TTScorerScreen() {
   const [isPaused,    setIsPaused]    = useState(false);
 
   const loadMatch = useCallback(async () => {
-    if (!params.tournamentId) { setLoading(false); return; }
     try {
-      const ws = await apiGetWorkspace(token!, parseInt(params.tournamentId));
-      const ev = (ws.events ?? []).find((e: any) =>
-        e.event_id === parseInt(params.eventId ?? '0')
-      );
-      if (ev?.sport_config) setSportConfig(ev.sport_config);
-      const m = (ev?.matches ?? []).find((m: any) => m.match_id === parseInt(matchId));
-      if (m) {
-        setMatch(m);
-        if (m.current_server) setFirstServer(m.current_server);
-      }
+      const m = await apiGetMatch(token!, parseInt(matchId));
+      if (m?.sport_config) setSportConfig(m.sport_config);
+      setMatch(m);
+      if (m?.current_server) setFirstServer(m.current_server);
     } catch {}
     setLoading(false);
-  }, [matchId, params.tournamentId, params.eventId, token]);
+  }, [matchId, token]);
 
   useFocusEffect(useCallback(() => { loadMatch(); }, [loadMatch]));
 
@@ -371,14 +364,10 @@ export default function TTScorerScreen() {
               <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 2, textTransform: 'uppercase',
                 color: leftServing && !isDone ? C.green : C.mutedHi, marginBottom: 4 }}
                 numberOfLines={1}>{leftName}</Text>
-              <Text style={{ fontSize: 88, fontWeight: '900', lineHeight: 92, color: leftScoreColor }}>
+              <Text style={{ fontSize: 88, fontWeight: '900', lineHeight: 92, color: leftScoreColor, includeFontPadding: false }}>
                 {leftScore}
               </Text>
               <SetDots won={leftSetsWon} total={setsToWin} />
-            </View>
-
-            <View style={{ alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 }}>
-              <Text style={{ color: C.border, fontSize: 24, fontWeight: '900' }}>—</Text>
             </View>
 
             {/* Right */}
@@ -393,7 +382,7 @@ export default function TTScorerScreen() {
               <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 2, textTransform: 'uppercase',
                 color: rightServing && !isDone ? C.green : C.mutedHi, marginBottom: 4 }}
                 numberOfLines={1}>{rightName}</Text>
-              <Text style={{ fontSize: 88, fontWeight: '900', lineHeight: 92, color: rightScoreColor }}>
+              <Text style={{ fontSize: 88, fontWeight: '900', lineHeight: 92, color: rightScoreColor, includeFontPadding: false }}>
                 {rightScore}
               </Text>
               <SetDots won={rightSetsWon} total={setsToWin} />

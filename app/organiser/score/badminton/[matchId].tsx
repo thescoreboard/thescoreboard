@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { useAuthStore } from '../../../../src/store/auth';
 import {
-  apiUpdateMatchStatus, apiUpdateScore, apiUndoSet, apiWalkoverMatch, apiGetWorkspace,
+  apiUpdateMatchStatus, apiUpdateScore, apiUndoSet, apiWalkoverMatch, apiGetMatch,
 } from '../../../../src/api/client';
 
 const C = {
@@ -43,16 +43,13 @@ export default function BadmintonScorerScreen() {
   const [isPaused,    setIsPaused]    = useState(false);
 
   const loadMatch = useCallback(async () => {
-    if (!params.tournamentId) { setLoading(false); return; }
     try {
-      const ws = await apiGetWorkspace(token!, parseInt(params.tournamentId));
-      const ev = (ws.events ?? []).find((e: any) => e.event_id === parseInt(params.eventId ?? '0'));
-      if (ev?.sport_config) setSportConfig(ev.sport_config);
-      const m  = (ev?.matches ?? []).find((m: any) => m.match_id === parseInt(matchId));
-      if (m) setMatch(m);
+      const m = await apiGetMatch(token!, parseInt(matchId));
+      if (m?.sport_config) setSportConfig(m.sport_config);
+      setMatch(m);
     } catch {}
     setLoading(false);
-  }, [matchId, params.tournamentId, params.eventId, token]);
+  }, [matchId, token]);
 
   useFocusEffect(useCallback(() => { loadMatch(); }, [loadMatch]));
 
@@ -275,7 +272,7 @@ export default function BadmintonScorerScreen() {
                   </View>
                   <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 2, textTransform: 'uppercase',
                     color: srv && !isDone ? C.blue : C.mutedHi, marginBottom: 4 }} numberOfLines={1}>{name}</Text>
-                  <Text style={{ fontSize: 88, fontWeight: '900', lineHeight: 92, color: scCol }}>{score}</Text>
+                  <Text style={{ fontSize: 88, fontWeight: '900', lineHeight: 92, color: scCol, includeFontPadding: false }}>{score}</Text>
                   <SetDots won={pos === 1 ? setsWon1 : setsWon2} total={setsToWin} />
                 </View>
               );

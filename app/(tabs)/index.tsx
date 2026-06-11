@@ -1,22 +1,37 @@
 /**
  * Home screen — role-aware.
- *   Guest     → landing page (hero · stats · live · how-it-works · player/organiser cards)
+ *   Guest     → Spotlight discovery page (warm cream, featured hero + rails)
  *   Player    → personalised feed (4 category cards · Near You · Match Updates · Closing Soon · Recently Viewed)
  *   Organiser → quick-create + live tournament feed
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  RefreshControl, ActivityIndicator, Pressable,
+  RefreshControl, ActivityIndicator, Pressable, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Path } from 'react-native-svg';
 import { useTheme }    from '../../src/hooks/useTheme';
 import { useAuthStore } from '../../src/store/auth';
 import { apiGetHomepage, apiGetMyTournaments, apiGetDashboard } from '../../src/api/client';
 import { getRecentlyViewed, RecentTournament } from '../../src/utils/recentlyViewed';
+import { storage } from '../../src/utils/storage';
 import TournamentCard from '../../src/components/shared/TournamentCard';
-import { F, SPORT_COLORS, SPORT_LABELS, STATUS_LABELS, STATUS_COLORS } from '../../src/theme';
+import { F, SPORT_COLORS, SPORT_LABELS, STATUS_LABELS, STATUS_COLORS, SPORT_ICONS } from '../../src/theme';
+
+// ── Warm palette for the guest Spotlight view ────────────────────────────────
+const WARM = {
+  bg:      '#FAF7F0',
+  surface: '#FFFFFF',
+  border:  '#E9DECB',
+  ink:     '#211C14',
+  muted:   '#7A6F5D',
+  subtle:  '#A99D88',
+};
+const PRIMARY = '#FF6B35';
+const GREEN   = '#22c55e';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -25,7 +40,216 @@ function cityMatch(t: any, city: string): boolean {
   return (t.location ?? '').toLowerCase().includes(city.toLowerCase());
 }
 
-// ─── Compact horizontal card ─────────────────────────────────────────────────
+const sportOf = (t: any): string => t.sport_key ?? t.events?.[0]?.sport_key ?? '';
+const cityOf  = (t: any): string => t.city ?? t.location ?? '';
+
+// ── Tiny SVG icons ────────────────────────────────────────────────────────────
+const IconPin = ({ size = 14, color = PRIMARY }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z" fill={color} />
+  </Svg>
+);
+const IconChevron = ({ size = 12, color = WARM.muted }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path d="m6 9 6 6 6-6" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+  </Svg>
+);
+const IconPlay = ({ size = 13, color = '#fff' }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24"><Path d="M6 4l14 8-14 8z" fill={color} /></Svg>
+);
+const IconArrow = ({ size = 12, color = WARM.muted }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path d="M5 12h14M13 6l6 6-6 6" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+  </Svg>
+);
+const IconSearch = ({ size = 16, color = WARM.subtle }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0Z" stroke={color} strokeWidth={2} strokeLinecap="round" fill="none" />
+  </Svg>
+);
+
+function LiveDot({ size = 6, color = '#fff' }: { size?: number; color?: string }) {
+  return <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: color }} />;
+}
+
+// ── Watch Live button ─────────────────────────────────────────────────────────
+function WatchLiveButton({ onPress, accent = PRIMARY }: { onPress: () => void; accent?: string }) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [wl.btn, { backgroundColor: '#fff', opacity: pressed ? 0.85 : 1 }]}>
+      <IconPlay color={accent} />
+      <Text style={[wl.txt, { color: accent }]}>WATCH LIVE</Text>
+    </Pressable>
+  );
+}
+const wl = StyleSheet.create({
+  btn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 9, paddingHorizontal: 15, paddingVertical: 9 },
+  txt: { fontFamily: F.display, fontSize: 9.5, letterSpacing: 0.8 },
+});
+
+// ── Featured hero card ────────────────────────────────────────────────────────
+function FeaturedHero({ t, router }: { t: any; router: any }) {
+  const sk     = sportOf(t);
+  const accent = SPORT_COLORS[sk] ?? PRIMARY;
+  const isLive = t.status === 'live' || (t.live_count ?? 0) > 0;
+  const meta   = [cityOf(t), t.total_players ? `${t.total_players} players` : null].filter(Boolean);
+
+  return (
+    <LinearGradient
+      colors={[accent, shadeColor(accent, -30)]}
+      start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+      style={fh.hero}
+    >
+      {/* Large faded sport watermark */}
+      <Text style={fh.watermark}>{SPORT_ICONS[sk] ?? '🏆'}</Text>
+
+      {/* Badge */}
+      <View style={fh.badge}>
+        <LiveDot size={6} color="#fff" />
+        <Text style={fh.badgeTxt}>{isLive ? 'FEATURED · LIVE NOW' : 'FEATURED'}</Text>
+      </View>
+
+      <Text style={fh.title} numberOfLines={2}>{(t.name ?? '').toUpperCase()}</Text>
+
+      {meta.length > 0 && (
+        <View style={fh.metaRow}>
+          {meta.map((m, i) => (
+            <Text key={i} style={fh.metaTxt}>{m}</Text>
+          ))}
+        </View>
+      )}
+
+      <View style={fh.actions}>
+        <WatchLiveButton accent={accent} onPress={() => router.push(`/t/${t.slug}` as any)} />
+        <Pressable onPress={() => router.push(`/t/${t.slug}` as any)} style={({ pressed }) => [fh.follow, { opacity: pressed ? 0.8 : 1 }]}>
+          <Text style={fh.followTxt}>FOLLOW</Text>
+        </Pressable>
+      </View>
+    </LinearGradient>
+  );
+}
+const fh = StyleSheet.create({
+  hero:      { marginHorizontal: 16, marginBottom: 22, borderRadius: 20, paddingHorizontal: 20, paddingTop: 18, paddingBottom: 20, overflow: 'hidden' },
+  watermark: { position: 'absolute', top: -30, right: -12, fontSize: 130, opacity: 0.15 },
+  badge:     { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: 'rgba(0,0,0,0.22)', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5, marginBottom: 14 },
+  badgeTxt:  { fontFamily: F.display, fontSize: 8.5, color: '#fff', letterSpacing: 1.5 },
+  title:     { fontFamily: F.display, fontSize: 22, color: '#fff', letterSpacing: -1, lineHeight: 25, marginBottom: 9 },
+  metaRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginBottom: 16 },
+  metaTxt:   { fontSize: 12, color: 'rgba(255,255,255,0.9)', fontWeight: '600' },
+  actions:   { flexDirection: 'row', gap: 10 },
+  follow:    { backgroundColor: 'rgba(0,0,0,0.22)', borderRadius: 9, paddingHorizontal: 18, paddingVertical: 9, justifyContent: 'center' },
+  followTxt: { fontFamily: F.display, fontSize: 9.5, color: '#fff', letterSpacing: 0.5 },
+});
+
+// ── Search bar (shown when no featured tournament) ────────────────────────────
+function SearchBar({ router }: { router: any }) {
+  const [query, setQuery] = useState('');
+  return (
+    <Pressable
+      onPress={() => router.push('/(tabs)/explore' as any)}
+      style={sb.wrap}
+    >
+      <View style={sb.inner} pointerEvents="none">
+        <IconSearch size={16} color={WARM.subtle} />
+        <Text style={sb.placeholder}>Search tournaments, sports, venues</Text>
+      </View>
+    </Pressable>
+  );
+}
+const sb = StyleSheet.create({
+  wrap:        { marginHorizontal: 16, marginBottom: 22 },
+  inner:       { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: WARM.surface, borderWidth: 1.5, borderColor: WARM.border, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14 },
+  placeholder: { fontSize: 14, color: WARM.subtle, flex: 1 },
+});
+
+// ── Rail card (horizontal scroll tile) ───────────────────────────────────────
+function RailCard({ t, onPress }: { t: any; onPress: () => void }) {
+  const sk = sportOf(t);
+  const accent = SPORT_COLORS[sk] ?? '#888';
+  const isLive = t.status === 'live' || (t.live_count ?? 0) > 0;
+  const spotsLeft = t.max_participants && t.total_players
+    ? t.max_participants - t.total_players
+    : null;
+
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [rc.card, { borderTopColor: accent, opacity: pressed ? 0.85 : 1 }]}>
+      <View style={rc.top}>
+        <View style={rc.emojiBox}>
+          <Text style={rc.emoji}>{SPORT_ICONS[sk] ?? '🏆'}</Text>
+        </View>
+        {isLive ? (
+          <View style={rc.liveRow}>
+            <LiveDot size={6} color={PRIMARY} />
+            <Text style={[rc.liveTxt, { color: PRIMARY }]}>LIVE</Text>
+          </View>
+        ) : spotsLeft != null ? (
+          <Text style={[rc.spotsTxt, { color: GREEN }]}>{spotsLeft} spots left</Text>
+        ) : (
+          <Text style={[rc.spotsTxt, { color: GREEN }]}>OPEN</Text>
+        )}
+      </View>
+      <Text style={rc.name} numberOfLines={2}>{(t.name ?? '').toUpperCase()}</Text>
+      <View style={{ flex: 1 }} />
+      <View style={rc.metaRow}>
+        <IconPin size={11} color={WARM.muted} />
+        <Text style={rc.metaTxt} numberOfLines={1}>{cityOf(t) || '—'}</Text>
+      </View>
+    </Pressable>
+  );
+}
+const rc = StyleSheet.create({
+  card:     { width: 172, height: 116, backgroundColor: WARM.surface, borderWidth: 1, borderColor: WARM.border, borderTopWidth: 3, borderRadius: 13, padding: 14, marginRight: 11 },
+  top:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 22, marginBottom: 9 },
+  emojiBox: { width: 26, height: 22, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  emoji:    { fontSize: 17, includeFontPadding: false },
+  liveRow:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  liveTxt:  { fontFamily: F.display, fontSize: 9, letterSpacing: 1, includeFontPadding: false, lineHeight: 13 },
+  spotsTxt: { fontFamily: F.display, fontSize: 9, letterSpacing: 0.5, includeFontPadding: false, lineHeight: 13 },
+  name:     { fontFamily: F.display, fontSize: 11.5, color: WARM.ink, letterSpacing: -0.4, lineHeight: 15, includeFontPadding: false },
+  metaRow:  { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  metaTxt:  { fontSize: 11, color: WARM.muted, flex: 1, includeFontPadding: false, lineHeight: 15 },
+});
+
+// ── Horizontal rail section ───────────────────────────────────────────────────
+function Rail({ label, items, router }: { label: string; items: any[]; router: any }) {
+  if (!items.length) return null;
+  return (
+    <View style={{ marginBottom: 18 }}>
+      <View style={rl.head}>
+        <Text style={rl.label}>{label}</Text>
+        <Pressable onPress={() => router.push('/(tabs)/explore' as any)} style={rl.allRow}>
+          <Text style={rl.all}>All</Text>
+          <IconArrow size={12} color={WARM.muted} />
+        </Pressable>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, alignItems: 'flex-start' }}>
+        {items.map((t) => (
+          <RailCard key={t.tournament_id ?? t.slug} t={t} onPress={() => router.push(`/t/${t.slug}` as any)} />
+        ))}
+        <View style={{ width: 8 }} />
+      </ScrollView>
+    </View>
+  );
+}
+const rl = StyleSheet.create({
+  head:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 10 },
+  label:  { fontFamily: F.bold, fontSize: 14, color: WARM.ink, letterSpacing: -0.3 },
+  allRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  all:    { fontFamily: F.semi, fontSize: 12, color: WARM.muted },
+});
+
+// ── shade helper (darken a hex colour by pct%) ────────────────────────────────
+function shadeColor(hex: string, pct: number): string {
+  const n = parseInt(hex.replace('#', ''), 16);
+  const f = pct / 100;
+  const r = Math.max(0, Math.min(255, ((n >> 16) & 0xff) + Math.round(255 * f)));
+  const g = Math.max(0, Math.min(255, ((n >>  8) & 0xff) + Math.round(255 * f)));
+  const b = Math.max(0, Math.min(255, ( n        & 0xff) + Math.round(255 * f)));
+  return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Compact horizontal card (used in logged-in views)
+// ═════════════════════════════════════════════════════════════════════════════
 
 function MiniCard({ t, onPress }: { t: any; onPress: () => void }) {
   const { theme } = useTheme();
@@ -41,11 +265,11 @@ function MiniCard({ t, onPress }: { t: any; onPress: () => void }) {
     >
       <View style={mc.topRow}>
         <View style={[mc.sportTag, { backgroundColor: accent + '18', borderColor: accent + '40' }]}>
-          <Text style={[mc.sportText, { fontFamily: F.bold, color: accent }]}>{SPORT_LABELS[sportKey] ?? sportKey}</Text>
+          <Text style={[mc.sportText, { fontFamily: F.display, color: accent }]}>{SPORT_LABELS[sportKey] ?? sportKey}</Text>
         </View>
         <View style={[mc.statusPill, { backgroundColor: stColor + '18' }]}>
           <View style={[mc.dot, { backgroundColor: stColor }]} />
-          <Text style={[mc.statusText, { fontFamily: F.bold, color: stColor }]}>{STATUS_LABELS[t.status] ?? t.status}</Text>
+          <Text style={[mc.statusText, { fontFamily: F.display, color: stColor }]}>{STATUS_LABELS[t.status] ?? t.status}</Text>
         </View>
       </View>
       <Text style={[mc.name, { fontFamily: F.bold, color: c.ink }]} numberOfLines={2}>{t.name}</Text>
@@ -76,7 +300,7 @@ function RecentCard({ t, onPress }: { t: RecentTournament; onPress: () => void }
       onPress={onPress}
       style={({ pressed }) => [rvc.card, { backgroundColor: c.elevated, borderColor: c.border, borderLeftColor: accent, opacity: pressed ? 0.8 : 1 }]}
     >
-      <Text style={[rvc.sport, { fontFamily: F.bold, color: accent }]}>{SPORT_LABELS[t.sportKey] ?? t.sportKey}</Text>
+      <Text style={[rvc.sport, { fontFamily: F.display, color: accent }]}>{SPORT_LABELS[t.sportKey] ?? t.sportKey}</Text>
       <Text style={[rvc.name, { fontFamily: F.bold, color: c.ink }]} numberOfLines={2}>{t.name}</Text>
       <Text style={[rvc.status, { fontFamily: F.body, color: c.muted }]}>{STATUS_LABELS[t.status] ?? t.status}</Text>
     </Pressable>
@@ -100,7 +324,7 @@ function CategoryCard({ label, count, accent, onPress }: { label:string; count:n
       style={({ pressed }) => [ccat.card, { backgroundColor: c.surface, borderColor: accent + '40', borderLeftColor: accent, opacity: pressed ? 0.85 : 1 }]}
     >
       <Text style={[ccat.count, { fontFamily: F.display, color: accent }]}>{count}</Text>
-      <Text style={[ccat.label, { fontFamily: F.bold, color: c.muted }]}>{label}</Text>
+      <Text style={[ccat.label, { fontFamily: F.semi, color: c.muted }]}>{label}</Text>
       <View style={[ccat.bar, { backgroundColor: accent }]} />
     </Pressable>
   );
@@ -108,7 +332,7 @@ function CategoryCard({ label, count, accent, onPress }: { label:string; count:n
 const ccat = StyleSheet.create({
   card:  { flex:1, borderRadius:12, borderWidth:1.5, borderLeftWidth:4, padding:16, minHeight:92, justifyContent:'space-between' },
   count: { fontSize:32, fontWeight:'900', letterSpacing:-1, lineHeight:36 },
-  label: { fontSize:10, fontWeight:'700', textTransform:'uppercase', letterSpacing:0.6, marginTop:4 },
+  label: { fontSize:11, letterSpacing:0, marginTop:4 },
   bar:   { height:2, width:24, borderRadius:2, marginTop:8 },
 });
 
@@ -120,13 +344,13 @@ function SectionHead({ label, title, count, accent }: { label?:string; title:str
   const ac = accent ?? c.primary;
   return (
     <View style={sh.wrap}>
-      {label && <Text style={[sh.label, { fontFamily: F.bold, color: ac }]}>{label}</Text>}
+      {label && <Text style={[sh.label, { fontFamily: F.semi, color: ac }]}>{label}</Text>}
       <View style={sh.row}>
         <View style={[sh.bar, { backgroundColor: ac }]} />
-        <Text style={[sh.title, { fontFamily: F.display, color: c.ink }]}>{title}</Text>
+        <Text style={[sh.title, { fontFamily: F.bold, color: c.ink }]}>{title}</Text>
         {count != null && count > 0 && (
           <View style={[sh.badge, { backgroundColor: ac + '20' }]}>
-            <Text style={[sh.badgeText, { fontFamily: F.bold, color: ac }]}>{count}</Text>
+            <Text style={[sh.badgeText, { fontFamily: F.semi, color: ac }]}>{count}</Text>
           </View>
         )}
       </View>
@@ -134,83 +358,14 @@ function SectionHead({ label, title, count, accent }: { label?:string; title:str
   );
 }
 const sh = StyleSheet.create({
-  wrap:      { paddingHorizontal:16, paddingTop:24, paddingBottom:10 },
-  label:     { fontSize:10, fontWeight:'800', textTransform:'uppercase', letterSpacing:1, marginBottom:6 },
+  wrap:      { paddingHorizontal:16, paddingTop:22, paddingBottom:10 },
+  label:     { fontSize:11, letterSpacing:0.3, marginBottom:5 },
   row:       { flexDirection:'row', alignItems:'center', gap:8 },
-  bar:       { width:3, height:16, borderRadius:2 },
-  title:     { fontSize:13, fontWeight:'900', letterSpacing:-0.2, flex:1 },
+  bar:       { width:3, height:18, borderRadius:2 },
+  title:     { fontSize:17, letterSpacing:-0.4, flex:1 },
   badge:     { borderRadius:10, paddingHorizontal:9, paddingVertical:3 },
-  badgeText: { fontSize:11, fontWeight:'700' },
+  badgeText: { fontSize:12 },
 });
-
-// ─── How it works step card ───────────────────────────────────────────────────
-
-function StepCard({ num, title, desc, accent }: { num:string; title:string; desc:string; accent:string }) {
-  const { theme } = useTheme();
-  const c = theme.colors;
-  return (
-    <View style={[step.card, { backgroundColor: c.surface, borderColor: c.border }]}>
-      <View style={step.topRow}>
-        <View style={[step.numBadge, { backgroundColor: accent + '20' }]}>
-          <Text style={[step.numText, { fontFamily: F.display, color: accent }]}>{num}</Text>
-        </View>
-        <Text style={[step.watermark, { fontFamily: F.display, color: accent + '18' }]}>{num}</Text>
-      </View>
-      <Text style={[step.title, { fontFamily: F.bold, color: c.ink }]}>{title}</Text>
-      <Text style={[step.desc, { fontFamily: F.body, color: c.muted }]}>{desc}</Text>
-    </View>
-  );
-}
-const step = StyleSheet.create({
-  card:     { borderRadius:16, borderWidth:1.5, padding:20, marginBottom:12 },
-  topRow:   { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginBottom:16 },
-  numBadge: { borderRadius:8, paddingHorizontal:10, paddingVertical:6 },
-  numText:  { fontSize:14, fontWeight:'900', letterSpacing:0.5 },
-  watermark:{ fontSize:64, fontWeight:'900', letterSpacing:-4, lineHeight:68 },
-  title:    { fontSize:16, fontWeight:'800', marginBottom:8 },
-  desc:     { fontSize:13, lineHeight:20 },
-});
-
-// ─── Value proposition card (dark) ───────────────────────────────────────────
-
-function ValueCard({ forLabel, title, desc, checks, accent, btnLabel, onPress }: {
-  forLabel: string; title: string; desc: string;
-  checks: string[]; accent: string;
-  btnLabel: string; onPress: () => void;
-}) {
-  return (
-    <View style={[vc.card, { backgroundColor: '#111827' }]}>
-      <Text style={[vc.forLabel, { fontFamily: F.bold, color: accent }]}>{forLabel}</Text>
-      <Text style={[vc.title, { fontFamily: F.bold }]}>{title}</Text>
-      <Text style={[vc.desc, { fontFamily: F.body }]}>{desc}</Text>
-      <View style={vc.checks}>
-        {checks.map(item => (
-          <View key={item} style={vc.checkRow}>
-            <Text style={[vc.tick, { color: accent }]}>✓</Text>
-            <Text style={[vc.checkText, { fontFamily: F.body }]}>{item}</Text>
-          </View>
-        ))}
-      </View>
-      <TouchableOpacity onPress={onPress} style={[vc.btn, { backgroundColor: accent }]}>
-        <Text style={[vc.btnText, { fontFamily: F.display }]}>{btnLabel}</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-const vc = StyleSheet.create({
-  card:      { borderRadius:16, padding:24, marginHorizontal:16, marginBottom:12 },
-  forLabel:  { fontSize:10, fontWeight:'800', textTransform:'uppercase', letterSpacing:1, marginBottom:10 },
-  title:     { fontSize:22, fontWeight:'900', color:'#fff', lineHeight:28, marginBottom:10, letterSpacing:-0.5 },
-  desc:      { fontSize:13, color:'rgba(255,255,255,0.6)', lineHeight:20, marginBottom:16 },
-  checks:    { gap:8, marginBottom:20 },
-  checkRow:  { flexDirection:'row', alignItems:'flex-start', gap:10 },
-  tick:      { fontSize:13, fontWeight:'900', marginTop:1 },
-  checkText: { fontSize:13, color:'rgba(255,255,255,0.75)', lineHeight:20, flex:1 },
-  btn:       { borderRadius:10, paddingVertical:13, alignItems:'center' },
-  btnText:   { color:'#fff', fontSize:11, fontWeight:'900', textTransform:'uppercase', letterSpacing:0.5 },
-});
-
-// ─── Main screen ─────────────────────────────────────────────────────────────
 
 // ─── Organiser command centre ─────────────────────────────────────────────────
 
@@ -218,7 +373,7 @@ function OrgStatBox({ label, value, accent, c }: { label:string; value:number|st
   return (
     <View style={[os.statBox, { backgroundColor: c.surface, borderColor: accent + '30', borderTopColor: accent }]}>
       <Text style={[os.statValue, { fontFamily: F.display, color: accent }]}>{value}</Text>
-      <Text style={[os.statLabel, { fontFamily: F.bold, color: c.muted }]}>{label}</Text>
+      <Text style={[os.statLabel, { fontFamily: F.semi, color: c.muted }]}>{label}</Text>
     </View>
   );
 }
@@ -229,7 +384,7 @@ function OrgQuickAction({ label, sub, accent, onPress, c }: { label:string; sub:
       onPress={onPress}
       style={({ pressed }) => [os.actionCard, { backgroundColor: accent, opacity: pressed ? 0.85 : 1 }]}
     >
-      <Text style={[os.actionLabel, { fontFamily: F.display }]}>{label}</Text>
+      <Text style={[os.actionLabel, { fontFamily: F.bold }]}>{label}</Text>
       <Text style={[os.actionSub, { fontFamily: F.body }]}>{sub}</Text>
     </Pressable>
   );
@@ -243,13 +398,13 @@ function OrgTournamentRow({ t, onPress, onManage, c }: { t:any; onPress:()=>void
       <Pressable onPress={onPress} style={{ flex:1 }}>
         <View style={os.tournTop}>
           <View style={[os.sportTag, { backgroundColor: accent + '18', borderColor: accent + '40' }]}>
-            <Text style={[os.sportTagText, { fontFamily: F.bold, color: accent }]}>
+            <Text style={[os.sportTagText, { fontFamily: F.display, color: accent }]}>
               {SPORT_LABELS[t.sport_key ?? ''] ?? t.sport_key ?? ''}
             </Text>
           </View>
           <View style={[os.stTag, { backgroundColor: stColor + '18' }]}>
             <View style={[os.stDot, { backgroundColor: stColor }]} />
-            <Text style={[os.stText, { fontFamily: F.bold, color: stColor }]}>
+            <Text style={[os.stText, { fontFamily: F.display, color: stColor }]}>
               {STATUS_LABELS[t.status] ?? t.status}
             </Text>
           </View>
@@ -258,7 +413,7 @@ function OrgTournamentRow({ t, onPress, onManage, c }: { t:any; onPress:()=>void
         {t.location && <Text style={[os.tournLoc, { fontFamily: F.body, color: c.muted }]}>{t.location}</Text>}
       </Pressable>
       <Pressable onPress={onManage} style={[os.manageBtn, { backgroundColor: c.primary }]}>
-        <Text style={[os.manageBtnText, { fontFamily: F.display }]}>Manage</Text>
+        <Text style={[os.manageBtnText, { fontFamily: F.bold }]}>Manage</Text>
       </Pressable>
     </View>
   );
@@ -277,7 +432,7 @@ function OrganiserHome({ myTourneys, liveNow, firstName, c, router }: {
       {/* Greeting */}
       <View style={[os.greet, { borderBottomColor: c.border }]}>
         <View>
-          <Text style={[os.greetSub, { fontFamily: F.body, color: c.muted }]}>Command Centre</Text>
+          <Text style={[os.greetSub, { fontFamily: F.semi, color: c.muted }]}>Command centre</Text>
           <Text style={[os.greetName, { fontFamily: F.display, color: c.ink }]}>{firstName || 'Organiser'}</Text>
         </View>
         <Pressable
@@ -314,16 +469,12 @@ function OrganiserHome({ myTourneys, liveNow, firstName, c, router }: {
         />
       </View>
 
-      {/* My Live / Active tournaments */}
       {myLive.length > 0 && (
         <>
-          <SectionHead label="HAPPENING NOW" title="Your Live Tournaments" count={myLive.length} accent={c.primary} />
+          <SectionHead label="Happening now" title="Your live tournaments" count={myLive.length} accent={c.primary} />
           <View style={{ paddingHorizontal:16, gap:10 }}>
             {myLive.map((t: any) => (
-              <OrgTournamentRow
-                key={t.tournament_id}
-                t={t}
-                c={c}
+              <OrgTournamentRow key={t.tournament_id} t={t} c={c}
                 onPress={() => router.push(`/t/${t.slug}` as any)}
                 onManage={() => router.push(`/organiser/tournament/${t.tournament_id}` as any)}
               />
@@ -332,16 +483,12 @@ function OrganiserHome({ myTourneys, liveNow, firstName, c, router }: {
         </>
       )}
 
-      {/* My Upcoming (registration open) */}
       {myUpcoming.length > 0 && (
         <>
-          <SectionHead label="REGISTRATION OPEN" title="Upcoming Tournaments" count={myUpcoming.length} accent="#22c55e" />
+          <SectionHead label="Registration open" title="Upcoming tournaments" count={myUpcoming.length} accent="#22c55e" />
           <View style={{ paddingHorizontal:16, gap:10 }}>
             {myUpcoming.map((t: any) => (
-              <OrgTournamentRow
-                key={t.tournament_id}
-                t={t}
-                c={c}
+              <OrgTournamentRow key={t.tournament_id} t={t} c={c}
                 onPress={() => router.push(`/t/${t.slug}` as any)}
                 onManage={() => router.push(`/organiser/tournament/${t.tournament_id}` as any)}
               />
@@ -350,16 +497,12 @@ function OrganiserHome({ myTourneys, liveNow, firstName, c, router }: {
         </>
       )}
 
-      {/* Drafts */}
       {myDraft.length > 0 && (
         <>
-          <SectionHead label="DRAFTS" title="In Progress" count={myDraft.length} accent="#888" />
+          <SectionHead label="Drafts" title="In progress" count={myDraft.length} accent="#888" />
           <View style={{ paddingHorizontal:16, gap:10 }}>
             {myDraft.map((t: any) => (
-              <OrgTournamentRow
-                key={t.tournament_id}
-                t={t}
-                c={c}
+              <OrgTournamentRow key={t.tournament_id} t={t} c={c}
                 onPress={() => router.push(`/t/${t.slug}` as any)}
                 onManage={() => router.push(`/organiser/tournament/${t.tournament_id}` as any)}
               />
@@ -368,7 +511,6 @@ function OrganiserHome({ myTourneys, liveNow, firstName, c, router }: {
         </>
       )}
 
-      {/* Empty state */}
       {myTourneys.length === 0 && (
         <View style={os.emptyWrap}>
           <Text style={[os.emptyTitle, { fontFamily: F.display, color: c.ink }]}>No tournaments yet</Text>
@@ -381,19 +523,12 @@ function OrganiserHome({ myTourneys, liveNow, firstName, c, router }: {
           >
             <Text style={[os.emptyBtnText, { fontFamily: F.display }]}>Create Tournament</Text>
           </Pressable>
-          <Pressable
-            onPress={() => router.push('/(tabs)/explore' as any)}
-            style={({ pressed }) => [os.emptyBtnOutline, { borderColor: c.border, opacity: pressed ? 0.7 : 1 }]}
-          >
-            <Text style={[os.emptyBtnOutlineText, { fontFamily: F.bold, color: c.muted }]}>Read Feature Guides</Text>
-          </Pressable>
         </View>
       )}
 
-      {/* Community live */}
       {liveNow.length > 0 && (
         <>
-          <SectionHead label="COMMUNITY" title="Live Right Now" count={liveNow.length} accent="#3b82f6" />
+          <SectionHead label="Community" title="Live right now" count={liveNow.length} accent="#3b82f6" />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal:16 }}>
             {liveNow.slice(0, 6).map((t: any) => (
               <MiniCard key={t.tournament_id} t={t} onPress={() => router.push(`/t/${t.slug}` as any)} />
@@ -405,24 +540,20 @@ function OrganiserHome({ myTourneys, liveNow, firstName, c, router }: {
   );
 }
 
-// Organiser home styles
 const os = StyleSheet.create({
   greet:       { flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingHorizontal:16, paddingTop:18, paddingBottom:14, borderBottomWidth:1 },
-  greetSub:    { fontSize:10, fontWeight:'700', textTransform:'uppercase', letterSpacing:0.6, marginBottom:3 },
+  greetSub:    { fontSize:12, letterSpacing:0, marginBottom:3 },
   greetName:   { fontSize:22, fontWeight:'900', letterSpacing:-0.8 },
   newBtn:      { borderRadius:8, paddingHorizontal:16, paddingVertical:10 },
   newBtnText:  { color:'#fff', fontSize:10, fontWeight:'900', textTransform:'uppercase', letterSpacing:0.5 },
-
   statsRow:    { flexDirection:'row', paddingHorizontal:16, paddingTop:16, paddingBottom:4, gap:8 },
   statBox:     { flex:1, borderRadius:10, borderWidth:1.5, borderTopWidth:3, padding:12, alignItems:'center', gap:3 },
   statValue:   { fontSize:22, fontWeight:'900', letterSpacing:-1 },
-  statLabel:   { fontSize:9, fontWeight:'700', textTransform:'uppercase', letterSpacing:0.4 },
-
+  statLabel:   { fontSize:10, letterSpacing:0 },
   actionsRow:  { flexDirection:'row', paddingHorizontal:16, paddingVertical:12, gap:10 },
   actionCard:  { flex:1, borderRadius:12, padding:16, gap:3 },
-  actionLabel: { color:'#fff', fontSize:12, fontWeight:'900', letterSpacing:-0.3 },
+  actionLabel: { color:'#fff', fontSize:13, letterSpacing:-0.3 },
   actionSub:   { color:'rgba(255,255,255,0.7)', fontSize:11 },
-
   tournRow:    { flexDirection:'row', alignItems:'center', borderRadius:12, borderWidth:1.5, borderLeftWidth:4, padding:14, gap:10 },
   tournTop:    { flexDirection:'row', alignItems:'center', gap:6, marginBottom:6 },
   sportTag:    { borderRadius:6, borderWidth:1, paddingHorizontal:8, paddingVertical:3 },
@@ -434,17 +565,16 @@ const os = StyleSheet.create({
   tournLoc:    { fontSize:11 },
   manageBtn:   { borderRadius:8, paddingHorizontal:12, paddingVertical:8 },
   manageBtnText:{ color:'#fff', fontSize:10, fontWeight:'900', textTransform:'uppercase', letterSpacing:0.3 },
-
   emptyWrap:       { alignItems:'center', padding:40, gap:12 },
   emptyTitle:      { fontSize:16, fontWeight:'900' },
   emptySub:        { fontSize:13, textAlign:'center', lineHeight:20 },
   emptyBtn:        { borderRadius:10, paddingVertical:14, paddingHorizontal:28, alignItems:'center' },
   emptyBtnText:    { color:'#fff', fontSize:11, fontWeight:'900', textTransform:'uppercase', letterSpacing:0.5 },
-  emptyBtnOutline: { borderRadius:10, paddingVertical:12, paddingHorizontal:28, alignItems:'center', borderWidth:1.5, marginTop:4 },
-  emptyBtnOutlineText: { fontSize:12, fontWeight:'700' },
 });
 
-// ─── Main screen ─────────────────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════════════
+// Main screen
+// ═════════════════════════════════════════════════════════════════════════════
 
 export default function HomeScreen() {
   const { theme, toggle } = useTheme();
@@ -462,8 +592,6 @@ export default function HomeScreen() {
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Version counter — each call gets a unique ID so stale results from
-  // a superseded load (e.g. auth hydrating mid-flight) are silently dropped.
   const loadVersionRef = useRef(0);
   const scrollRef      = useRef<ScrollView>(null);
   const sectionY       = useRef<Record<string, number>>({});
@@ -471,8 +599,6 @@ export default function HomeScreen() {
   const load = useCallback(async () => {
     const version = ++loadVersionRef.current;
     try {
-      // ── Fire ALL three calls in parallel — no sequential waiting ──
-      // Personal data starts immediately, not after homepage returns.
       const personalPromise = (loggedIn && token)
         ? (isOrganiser ? apiGetDashboard(token) : apiGetMyTournaments(token))
         : Promise.resolve(null);
@@ -483,8 +609,6 @@ export default function HomeScreen() {
         personalPromise,
       ]);
 
-      // Ignore stale results — a newer load has already started
-      // (e.g. auth hydrated while this request was in-flight)
       if (version !== loadVersionRef.current) return;
 
       setData(homeRes);
@@ -502,7 +626,6 @@ export default function HomeScreen() {
       }
     } catch {}
     finally {
-      // Only update loading state if this is still the latest load
       if (version === loadVersionRef.current) {
         setLoading(false);
         setRefreshing(false);
@@ -513,14 +636,6 @@ export default function HomeScreen() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { const id = setInterval(load, 20000); return () => clearInterval(id); }, [load]);
 
-  if (loading) {
-    return (
-      <SafeAreaView style={{ flex:1, backgroundColor: c.bg }}>
-        <ActivityIndicator style={{ flex:1 }} color={c.primary} />
-      </SafeAreaView>
-    );
-  }
-
   const trending: any[]   = data?.trending ?? [];
   const sports: any[]     = data?.sports   ?? [];
   const totalLive: number = data?.total_live_matches ?? 0;
@@ -529,22 +644,121 @@ export default function HomeScreen() {
   const liveNow     = trending.filter(t => t.status === 'live' || t.status === 'fixtures');
   const nearYou     = city ? trending.filter(t => cityMatch(t, city)) : [];
   const closingSoon = trending.filter(t => t.status === 'registration');
-  const myActive    = myTourneys.filter((t: any) => t.status === 'live' || t.status === 'fixtures');
+  const featured    = liveNow[0] ?? closingSoon[0] ?? null;
   const firstName   = user?.name?.split(' ')[0] ?? '';
-
-  // Stats for guest hero
-  const totalTournaments = trending.length;
-  const sportCount       = sports.filter(s => s.tournament_count > 0).length || 4;
 
   const scrollTo = (key: string) => {
     const y = sectionY.current[key];
     if (y != null) scrollRef.current?.scrollTo({ y, animated: true });
   };
 
+  // ── Loading state ─────────────────────────────────────────────────────────
+  if (loading) {
+    const loadBg = loggedIn ? c.bg : WARM.bg;
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: loadBg }}>
+        <ActivityIndicator style={{ flex: 1 }} color={PRIMARY} />
+      </SafeAreaView>
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // GUEST VIEW — Spotlight design
+  // ══════════════════════════════════════════════════════════════════════════
+  if (!loggedIn) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: WARM.bg }} edges={['top']}>
+        {/* Header */}
+        <View style={gs.header}>
+          <Text style={gs.brand}>
+            THE<Text style={{ color: PRIMARY }}>SCORE</Text>BOARD
+          </Text>
+          <Pressable onPress={() => router.push('/(auth)/login')} style={({ pressed }) => [gs.signIn, { opacity: pressed ? 0.85 : 1 }]}>
+            <Text style={gs.signInTxt}>SIGN IN</Text>
+          </Pressable>
+        </View>
+
+        {/* Headline + city chip */}
+        <View style={gs.headlineRow}>
+          <Text style={gs.headline}>Find your{'\n'}next match</Text>
+          <Pressable style={gs.cityChip}>
+            <IconPin size={13} color={PRIMARY} />
+            <Text style={gs.cityTxt}>{city || 'Near You'}</Text>
+            <IconChevron size={12} color={WARM.muted} />
+          </Pressable>
+        </View>
+
+        {/* Scrollable content */}
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingTop: 4, paddingBottom: 120 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => { setRefreshing(true); load(); }}
+              tintColor={PRIMARY}
+            />
+          }
+        >
+          {/* Featured hero OR search bar if no tournaments */}
+          {featured
+            ? <FeaturedHero t={featured} router={router} />
+            : <SearchBar router={router} />
+          }
+
+          {/* Live Now rail */}
+          <Rail label="Live now" items={liveNow} router={router} />
+
+          {/* Closing Soon rail */}
+          <Rail label="Closing soon" items={closingSoon} router={router} />
+
+          {/* Empty state — nothing at all */}
+          {liveNow.length === 0 && closingSoon.length === 0 && (
+            <View style={gs.emptyState}>
+              <Text style={gs.emptyEmoji}>🏆</Text>
+              <Text style={gs.emptyTitle}>No tournaments yet</Text>
+              <Text style={gs.emptySub}>Check back soon — tournaments are added every day.</Text>
+            </View>
+          )}
+        </ScrollView>
+
+        {/* Bottom-pinned CTAs (fade over content) */}
+        <LinearGradient
+          colors={['rgba(250,247,240,0)', WARM.bg, WARM.bg]}
+          style={gs.pinned}
+          pointerEvents="box-none"
+        >
+          <View style={gs.pinnedRow}>
+            <Pressable
+              onPress={async () => {
+                await storage.setItem('tsb_intent', 'player');
+                router.push('/(auth)/register' as any);
+              }}
+              style={({ pressed }) => [gs.ctaPrimary, { opacity: pressed ? 0.9 : 1 }]}
+            >
+              <Text style={gs.ctaPrimaryTxt}>REGISTER TO PLAY</Text>
+            </Pressable>
+            <Pressable
+              onPress={async () => {
+                await storage.setItem('tsb_intent', 'organiser');
+                router.push('/(auth)/login');
+              }}
+              style={({ pressed }) => [gs.ctaSecondary, { opacity: pressed ? 0.9 : 1 }]}
+            >
+              <Text style={gs.ctaSecondaryTxt}>ORGANISE</Text>
+            </Pressable>
+          </View>
+        </LinearGradient>
+      </SafeAreaView>
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // LOGGED-IN VIEWS (player / organiser)
+  // ══════════════════════════════════════════════════════════════════════════
   return (
     <SafeAreaView style={{ flex:1, backgroundColor: c.bg }}>
-
-      {/* ── Header ──────────────────────────────────────────────────────── */}
+      {/* Header */}
       <View style={[s.header, { borderBottomColor: c.border }]}>
         <Text style={[s.brand, { color: c.ink }]}>
           THE<Text style={{ color: c.primary }}>SCORE</Text>BOARD
@@ -553,11 +767,6 @@ export default function HomeScreen() {
           <TouchableOpacity onPress={toggle} style={[s.themeBtn, { borderColor: c.border }]}>
             <Text style={[s.themeBtnTxt, { color: c.muted }]}>{theme.isDark ? 'LIGHT' : 'DARK'}</Text>
           </TouchableOpacity>
-          {!loggedIn && (
-            <TouchableOpacity onPress={() => router.push('/(auth)/login')} style={[s.signInBtn, { backgroundColor: c.primary }]}>
-              <Text style={[s.signInTxt, { fontFamily: F.display }]}>Sign In</Text>
-            </TouchableOpacity>
-          )}
           {isOrganiser && (
             <TouchableOpacity onPress={() => router.push('/organiser/create' as any)} style={[s.signInBtn, { backgroundColor: c.primary }]}>
               <Text style={[s.signInTxt, { fontFamily: F.display }]}>+ New</Text>
@@ -571,195 +780,32 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={c.primary} />}
       >
-
-        {/* ════════════════════════════════════════════════════════════════
-            GUEST VIEW — landing page
-        ════════════════════════════════════════════════════════════════ */}
-        {!loggedIn && (
-          <>
-            {/* Live pill */}
-            {totalLive > 0 && (
-              <View style={s.livePillWrap}>
-                <View style={[s.livePill, { backgroundColor: c.primary + '18', borderColor: c.primary + '40' }]}>
-                  <View style={[s.liveDot, { backgroundColor: c.primary }]} />
-                  <Text style={[s.livePillText, { fontFamily: F.bold, color: c.primary }]}>
-                    {totalLive} match{totalLive !== 1 ? 'es' : ''} live now
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            {/* Hero */}
-            <View style={s.hero}>
-              <Text style={[s.heroTitle, { fontFamily: F.display, color: c.ink }]}>
-                Your Local Sports Scene,{' '}
-                <Text style={{ color: c.primary }}>Live & Trackable</Text>
-              </Text>
-              <Text style={[s.heroSub, { fontFamily: F.body, color: c.muted }]}>
-                Find local tournaments, register to compete, and follow live scores — all in one place. Built for grassroots sports communities.
-              </Text>
-              <TouchableOpacity
-                onPress={() => router.push('/(tabs)/explore' as any)}
-                style={[s.heroBtnPrimary, { backgroundColor: c.primary }]}
-              >
-                <Text style={[s.heroBtnText, { fontFamily: F.display }]}>Find Tournaments</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => router.push('/(auth)/login')}
-                style={[s.heroBtnSecondary, { borderColor: c.border }]}
-              >
-                <Text style={[s.heroBtnSecText, { fontFamily: F.display, color: c.ink }]}>Sign In / Register</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Stats band */}
-            <View style={[s.statsBand, { backgroundColor: c.primary }]}>
-              <View style={s.statItem}>
-                <Text style={[s.statValue, { fontFamily: F.display }]}>{totalTournaments}+</Text>
-                <Text style={[s.statLabel, { fontFamily: F.bold }]}>Tournaments</Text>
-              </View>
-              <View style={[s.statDivider, { backgroundColor: 'rgba(255,255,255,0.3)' }]} />
-              <View style={s.statItem}>
-                <Text style={[s.statValue, { fontFamily: F.display }]}>{sportCount}</Text>
-                <Text style={[s.statLabel, { fontFamily: F.bold }]}>Sports</Text>
-              </View>
-              <View style={[s.statDivider, { backgroundColor: 'rgba(255,255,255,0.3)' }]} />
-              <View style={s.statItem}>
-                <Text style={[s.statValue, { fontFamily: F.display }]}>{totalLive}</Text>
-                <Text style={[s.statLabel, { fontFamily: F.bold }]}>Live Now</Text>
-              </View>
-            </View>
-
-            {/* Happening Now */}
-            {liveNow.length > 0 && (
-              <>
-                <SectionHead label="HAPPENING NOW" title="Live & Featured" count={liveNow.length} accent={c.primary} />
-                <Text style={[s.happeningSub, { fontFamily: F.body, color: c.muted }]}>
-                  {totalLive} match{totalLive !== 1 ? 'es' : ''} in progress right now
-                </Text>
-                <View style={{ paddingHorizontal:16, gap:10, marginTop:12 }}>
-                  {liveNow.slice(0, 3).map((t: any) => (
-                    <TournamentCard key={t.tournament_id} tournament={t} onPress={() => router.push(`/t/${t.slug}` as any)} />
-                  ))}
-                </View>
-                {liveNow.length > 3 && (
-                  <TouchableOpacity
-                    onPress={() => router.push('/(tabs)/explore' as any)}
-                    style={[s.viewAllBtn, { backgroundColor: c.primary }]}
-                  >
-                    <Text style={[s.viewAllText, { fontFamily: F.bold }]}>View All →</Text>
-                  </TouchableOpacity>
-                )}
-              </>
-            )}
-
-            {/* Closing Soon */}
-            {closingSoon.length > 0 && (
-              <>
-                <SectionHead label="REGISTER NOW" title="Closing Soon" count={closingSoon.length} accent="#D97706" />
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal:16 }}>
-                  {closingSoon.slice(0, 6).map((t: any) => (
-                    <MiniCard key={t.tournament_id} t={t} onPress={() => router.push(`/t/${t.slug}` as any)} />
-                  ))}
-                </ScrollView>
-              </>
-            )}
-
-            {/* How it works */}
-            <View style={s.howSection}>
-              <Text style={[s.howLabel, { fontFamily: F.bold, color: c.primary }]}>HOW IT WORKS</Text>
-              <Text style={[s.howTitle, { fontFamily: F.display, color: c.ink }]}>
-                Get on the field in three steps
-              </Text>
-            </View>
-            <View style={{ paddingHorizontal:16 }}>
-              <StepCard num="01" accent={c.primary}
-                title="Find Your Tournament"
-                desc="Browse local tournaments by sport, city, or skill level. From grassroots leagues to competitive championships."
-              />
-              <StepCard num="02" accent="#22c55e"
-                title="Register & Play"
-                desc="Sign up in seconds, get your bracket placement, and receive live updates as the competition unfolds."
-              />
-              <StepCard num="03" accent="#38bdf8"
-                title="Track Your Progress"
-                desc="Follow live scores, see your stats, and share your journey with your community."
-              />
-            </View>
-
-            {/* For Players card */}
-            <View style={{ marginTop:16 }}>
-              <ValueCard
-                forLabel="FOR PLAYERS"
-                title="Compete in tournaments near you"
-                desc="Browse by sport and location, register in seconds, track your stats, and follow live scores from anywhere."
-                checks={[
-                  'Find tournaments by sport & city',
-                  'Register to play in minutes',
-                  'Follow your live scores',
-                  'Track stats & tournament history',
-                ]}
-                accent="#38bdf8"
-                btnLabel="Find Tournaments"
-                onPress={() => router.push('/(tabs)/explore' as any)}
-              />
-              <ValueCard
-                forLabel="FOR ORGANISERS"
-                title="Run tournaments like a pro"
-                desc="Create brackets, manage fixtures, score matches live, and share results with your community instantly."
-                checks={[
-                  'Create brackets in minutes',
-                  'Score matches from your phone',
-                  'Share live results automatically',
-                  'Manage registrations & teams',
-                ]}
-                accent={c.primary}
-                btnLabel="Organise a Tournament"
-                onPress={() => router.push('/(auth)/login')}
-              />
-            </View>
-
-            {/* Explore CTA */}
-            <TouchableOpacity
-              onPress={() => router.push('/(tabs)/explore' as any)}
-              style={[s.exploreCta, { backgroundColor: c.primary }]}
-            >
-              <Text style={[s.exploreCtaText, { fontFamily: F.display }]}>
-                Browse All Tournaments
-              </Text>
-            </TouchableOpacity>
-          </>
-        )}
-
-        {/* ════════════════════════════════════════════════════════════════
-            PLAYER VIEW — personalised feed
-        ════════════════════════════════════════════════════════════════ */}
+        {/* ── PLAYER VIEW ── */}
         {isPlayer && (
           <>
             {/* Greeting */}
             <View style={[s.greetWrap, { paddingHorizontal:16, paddingTop:18, paddingBottom:4 }]}>
               <View>
-                <Text style={[s.greetHi, { fontFamily: F.body, color: c.muted }]}>Good day,</Text>
+                <Text style={[s.greetHi, { fontFamily: F.semi, color: c.muted }]}>Good day,</Text>
                 <Text style={[s.greetName, { fontFamily: F.display, color: c.ink }]}>{firstName || 'Player'}</Text>
               </View>
               {city ? (
                 <View style={[s.cityPill, { backgroundColor: c.elevated, borderColor: c.border }]}>
-                  <Text style={[s.cityTxt, { fontFamily: F.bold, color: c.muted }]}>{city}</Text>
+                  <Text style={[s.cityTxt, { fontFamily: F.display, color: c.muted }]}>{city}</Text>
                 </View>
               ) : null}
             </View>
 
-            {/* Live pulse */}
             {totalLive > 0 && (
               <View style={[s.livePulse, { backgroundColor: c.primary + '14', borderColor: c.primary + '40' }]}>
                 <View style={[s.liveDot, { backgroundColor: c.primary }]} />
-                <Text style={[s.livePulseText, { fontFamily: F.bold, color: c.primary }]}>
+                <Text style={[s.livePulseText, { fontFamily: F.semi, color: c.primary }]}>
                   {totalLive} match{totalLive !== 1 ? 'es' : ''} live right now
                 </Text>
               </View>
             )}
 
-            {/* 4 category cards */}
+            {/* 2×2 category grid */}
             <View style={s.grid}>
               <View style={s.gridRow}>
                 <CategoryCard label="Match Updates"  count={liveNow.length}     accent={c.primary} onPress={() => scrollTo('match-updates')} />
@@ -771,10 +817,9 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            {/* Near You */}
             {nearYou.length > 0 && (
               <View onLayout={e => { sectionY.current['near-you'] = e.nativeEvent.layout.y; }}>
-                <SectionHead label="YOUR LOCATION" title="Near You" count={nearYou.length} accent="#22c55e" />
+                <SectionHead label="Your location" title="Near you" count={nearYou.length} accent="#22c55e" />
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal:16 }}>
                   {nearYou.slice(0, 8).map((t: any) => (
                     <MiniCard key={t.tournament_id} t={t} onPress={() => router.push(`/t/${t.slug}` as any)} />
@@ -782,16 +827,10 @@ export default function HomeScreen() {
                 </ScrollView>
               </View>
             )}
-            {isPlayer && nearYou.length === 0 && city && (
-              <View style={[s.nudge, { borderColor: c.border, backgroundColor: c.elevated }]}>
-                <Text style={[s.nudgeTxt, { fontFamily: F.body, color: c.muted }]}>No tournaments found near {city} right now.</Text>
-              </View>
-            )}
 
-            {/* Match Updates */}
             {liveNow.length > 0 && (
               <View onLayout={e => { sectionY.current['match-updates'] = e.nativeEvent.layout.y; }}>
-                <SectionHead label="HAPPENING NOW" title="Match Updates" count={liveNow.length} accent={c.primary} />
+                <SectionHead label="Happening now" title="Match updates" count={liveNow.length} accent={c.primary} />
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal:16 }}>
                   {liveNow.slice(0, 8).map((t: any) => (
                     <MiniCard key={t.tournament_id} t={t} onPress={() => router.push(`/t/${t.slug}` as any)} />
@@ -800,10 +839,9 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {/* Closing Soon */}
             {closingSoon.length > 0 && (
               <View onLayout={e => { sectionY.current['closing-soon'] = e.nativeEvent.layout.y; }}>
-                <SectionHead label="REGISTER NOW" title="Closing Soon" count={closingSoon.length} accent="#D97706" />
+                <SectionHead label="Register now" title="Closing soon" count={closingSoon.length} accent="#D97706" />
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal:16 }}>
                   {closingSoon.slice(0, 8).map((t: any) => (
                     <MiniCard key={t.tournament_id} t={t} onPress={() => router.push(`/t/${t.slug}` as any)} />
@@ -812,10 +850,9 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {/* Recently Viewed */}
             {recents.length > 0 && (
               <View onLayout={e => { sectionY.current['recently-viewed'] = e.nativeEvent.layout.y; }}>
-                <SectionHead label="PICK UP WHERE YOU LEFT OFF" title="Recently Viewed" count={recents.length} accent="#38bdf8" />
+                <SectionHead label="Pick up where you left off" title="Recently viewed" count={recents.length} accent="#38bdf8" />
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal:16 }}>
                   {recents.map(t => (
                     <RecentCard key={t.slug} t={t} onPress={() => router.push(`/t/${t.slug}` as any)} />
@@ -824,21 +861,16 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {/* Explore CTA */}
             <TouchableOpacity
               onPress={() => router.push('/(tabs)/explore' as any)}
               style={[s.exploreCta, { backgroundColor: c.primary }]}
             >
-              <Text style={[s.exploreCtaText, { fontFamily: F.display }]}>
-                Browse All Tournaments
-              </Text>
+              <Text style={[s.exploreCtaText, { fontFamily: F.bold }]}>Browse all tournaments</Text>
             </TouchableOpacity>
           </>
         )}
 
-        {/* ════════════════════════════════════════════════════════════════
-            ORGANISER VIEW — command centre
-        ════════════════════════════════════════════════════════════════ */}
+        {/* ── ORGANISER VIEW ── */}
         {isOrganiser && (
           <OrganiserHome
             myTourneys={myTourneys}
@@ -849,16 +881,39 @@ export default function HomeScreen() {
           />
         )}
 
-        <View style={{ height:48 }} />
+        <View style={{ height: 48 }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
+// ─── Guest Spotlight styles ───────────────────────────────────────────────────
+const gs = StyleSheet.create({
+  header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 6, paddingBottom: 12 },
+  brand:        { fontFamily: F.display, fontSize: 16, color: WARM.ink, letterSpacing: -0.8 },
+  signIn:       { backgroundColor: PRIMARY, borderRadius: 9, paddingHorizontal: 16, paddingVertical: 9 },
+  signInTxt:    { fontFamily: F.display, fontSize: 10, color: '#fff', letterSpacing: 0.4 },
 
+  headlineRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 4, paddingBottom: 16 },
+  headline:     { fontFamily: F.display, fontSize: 24, color: WARM.ink, letterSpacing: -1, lineHeight: 28, maxWidth: 200 },
+  cityChip:     { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: WARM.surface, borderWidth: 1, borderColor: WARM.border, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 7 },
+  cityTxt:      { fontFamily: F.display, fontSize: 12, color: WARM.ink },
+
+  emptyState:   { alignItems: 'center', paddingTop: 40, paddingHorizontal: 32, gap: 10 },
+  emptyEmoji:   { fontSize: 48 },
+  emptyTitle:   { fontFamily: F.display, fontSize: 16, color: WARM.ink, letterSpacing: -0.3 },
+  emptySub:     { fontSize: 13, color: WARM.muted, textAlign: 'center', lineHeight: 20 },
+
+  pinned:       { position: 'absolute', left: 0, right: 0, bottom: 0, paddingTop: 28 },
+  pinnedRow:    { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingBottom: 14 },
+  ctaPrimary:   { flex: 1, backgroundColor: PRIMARY, borderRadius: 13, paddingVertical: 15, alignItems: 'center', shadowColor: PRIMARY, shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 6 },
+  ctaPrimaryTxt:{ fontFamily: F.display, fontSize: 10.5, color: '#fff', letterSpacing: 0.4 },
+  ctaSecondary: { flex: 1, backgroundColor: WARM.surface, borderWidth: 1.5, borderColor: WARM.border, borderRadius: 13, paddingVertical: 15, alignItems: 'center' },
+  ctaSecondaryTxt: { fontFamily: F.display, fontSize: 10.5, color: WARM.ink, letterSpacing: 0.4 },
+});
+
+// ─── Logged-in view styles ────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  // Header
   header:       { flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingHorizontal:16, height:56, borderBottomWidth:1.5 },
   brand:        { fontSize:18, fontFamily:'Unbounded_900Black', letterSpacing:-1 },
   themeBtn:     { borderRadius:6, borderWidth:1, paddingHorizontal:8, paddingVertical:5 },
@@ -866,58 +921,19 @@ const s = StyleSheet.create({
   signInBtn:    { borderRadius:8, paddingHorizontal:14, paddingVertical:8 },
   signInTxt:    { color:'#fff', fontSize:10, fontWeight:'900', textTransform:'uppercase', letterSpacing:0.4 },
 
-  // Guest hero
-  livePillWrap:   { paddingHorizontal:16, paddingTop:16 },
-  livePill:       { flexDirection:'row', alignItems:'center', alignSelf:'flex-start', borderRadius:20, borderWidth:1.5, paddingHorizontal:12, paddingVertical:6, gap:7 },
-  liveDot:        { width:7, height:7, borderRadius:4 },
-  livePillText:   { fontSize:12, fontWeight:'700' },
-  hero:           { padding:20, paddingBottom:24, gap:14 },
-  heroTitle:      { fontSize:26, fontWeight:'900', letterSpacing:-0.8, lineHeight:34 },
-  heroSub:        { fontSize:14, lineHeight:22 },
-  heroBtnPrimary: { borderRadius:10, paddingVertical:15, alignItems:'center' },
-  heroBtnSecondary:{ borderRadius:10, paddingVertical:14, alignItems:'center', borderWidth:1.5 },
-  heroBtnText:    { color:'#fff', fontSize:12, fontWeight:'900', textTransform:'uppercase', letterSpacing:0.6 },
-  heroBtnSecText: { fontSize:12, fontWeight:'900', textTransform:'uppercase', letterSpacing:0.6 },
-
-  // Stats band
-  statsBand:  { flexDirection:'row', alignItems:'center', justifyContent:'space-around', paddingVertical:20, paddingHorizontal:16, marginHorizontal:16, borderRadius:14 },
-  statItem:   { alignItems:'center' },
-  statValue:  { fontSize:26, fontWeight:'900', color:'#fff', letterSpacing:-1 },
-  statLabel:  { fontSize:9, fontWeight:'700', color:'rgba(255,255,255,0.7)', textTransform:'uppercase', letterSpacing:0.5, marginTop:3 },
-  statDivider:{ width:1, height:36 },
-
-  // Happening sub
-  happeningSub: { fontSize:13, paddingHorizontal:24, marginTop:-6 },
-
-  // View All button (below live section)
-  viewAllBtn:  { alignSelf:'center', marginTop:14, borderRadius:8, paddingHorizontal:22, paddingVertical:10 },
-  viewAllText: { color:'#fff', fontSize:11, fontWeight:'800', textTransform:'uppercase', letterSpacing:1 },
-
-  // Explore CTA
   exploreCta:     { marginHorizontal:16, marginTop:20, borderRadius:10, paddingVertical:14, alignItems:'center' },
-  exploreCtaText: { color:'#fff', fontSize:11, fontWeight:'900', textTransform:'uppercase', letterSpacing:0.6 },
+  exploreCtaText: { color:'#fff', fontSize:13, letterSpacing:-0.2 },
 
-  // How it works
-  howSection: { paddingHorizontal:16, paddingTop:32, paddingBottom:16, alignItems:'center' },
-  howLabel:   { fontSize:10, fontWeight:'800', textTransform:'uppercase', letterSpacing:1, marginBottom:10 },
-  howTitle:   { fontSize:22, fontWeight:'900', letterSpacing:-0.5, textAlign:'center', lineHeight:30 },
-
-  // Player greeting
   greetWrap:  { flexDirection:'row', alignItems:'center', justifyContent:'space-between' },
-  greetHi:    { fontSize:11, fontWeight:'600', textTransform:'uppercase', letterSpacing:0.5, marginBottom:2 },
+  greetHi:    { fontSize:13, letterSpacing:0, marginBottom:2 },
   greetName:  { fontSize:20, fontWeight:'900', letterSpacing:-0.8 },
   cityPill:   { borderRadius:20, borderWidth:1.5, paddingHorizontal:12, paddingVertical:6 },
   cityTxt:    { fontSize:11, fontWeight:'700' },
 
-  // Live pulse (player mode)
   livePulse:     { flexDirection:'row', alignItems:'center', marginHorizontal:16, marginTop:10, borderRadius:8, borderWidth:1.5, paddingHorizontal:12, paddingVertical:9, gap:8 },
-  livePulseText: { fontSize:13, fontWeight:'700' },
+  liveDot:       { width:7, height:7, borderRadius:4 },
+  livePulseText: { fontSize:13 },
 
-  // 2×2 grid
   grid:    { paddingHorizontal:16, paddingTop:14, gap:10 },
   gridRow: { flexDirection:'row', gap:10 },
-
-  // Nudge
-  nudge:    { marginHorizontal:16, marginTop:12, borderRadius:10, borderWidth:1.5, padding:14 },
-  nudgeTxt: { fontSize:12 },
 });

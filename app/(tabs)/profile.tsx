@@ -14,7 +14,7 @@ import { useTheme } from '../../src/hooks/useTheme';
 import { useAuthStore } from '../../src/store/auth';
 import {
   apiGetMe, apiGetPlayerProfile, apiSavePlayerProfile,
-  apiGetMyStats, apiGetMyTournaments,
+  apiGetMyStats, apiGetMyTournaments, apiDeleteAccount,
 } from '../../src/api/client';
 import { F, STATUS_COLORS, STATUS_LABELS, SPORT_COLORS, SPORT_LABELS } from '../../src/theme';
 
@@ -476,9 +476,11 @@ function PlayerDashboard() {
           </View>
         </View>
 
-        {/* ── Sign out ── */}
+        {/* ── Sign out + legal + delete ── */}
         <View style={{ paddingHorizontal:16, paddingBottom:32 }}>
           <SignOutButton />
+          <LegalLinks />
+          <DeleteAccountButton />
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -574,8 +576,12 @@ function OrganiserProfile() {
           </View>
         </View>
 
-        {/* ── Sign out ── */}
+        {/* ── Sign out + legal + delete ── */}
         <SignOutButton />
+        <LegalLinks />
+        <DeleteAccountButton />
+
+        <View style={{ height: 8 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -591,7 +597,6 @@ function SignOutButton() {
 
   const handleSignOut = async () => {
     await clearToken();
-    // Reset to tabs — the LoginPrompt will show since isLoggedIn() is now false
     router.replace('/(tabs)' as any);
   };
 
@@ -600,6 +605,82 @@ function SignOutButton() {
       style={{ backgroundColor:c.surface, borderRadius:12, borderWidth:1.5,
         borderColor:'#e53e3e33', padding:16, alignItems:'center' }}>
       <Text style={{ fontFamily:F.bold, fontSize:14, color:'#e53e3e' }}>Sign Out</Text>
+    </TouchableOpacity>
+  );
+}
+
+// ── Legal links (shared) ──────────────────────────────────────────────────────
+
+function LegalLinks() {
+  const { theme } = useTheme();
+  const c = theme.colors;
+  const router = useRouter();
+  return (
+    <View style={{ flexDirection:'row', justifyContent:'center', gap:24, marginTop:14 }}>
+      <TouchableOpacity onPress={() => router.push('/terms' as any)}>
+        <Text style={{ fontFamily:F.body, fontSize:12, color:c.muted, textDecorationLine:'underline' }}>Terms of Service</Text>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={() => router.push('/privacy' as any)}>
+        <Text style={{ fontFamily:F.body, fontSize:12, color:c.muted, textDecorationLine:'underline' }}>Privacy Policy</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// ── Delete account button (shared) ────────────────────────────────────────────
+
+function DeleteAccountButton() {
+  const { theme } = useTheme();
+  const c = theme.colors;
+  const { token, clearToken } = useAuthStore();
+  const router = useRouter();
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = () => {
+    // Guard: must have a token
+    if (!token) {
+      Alert.alert('Not signed in', 'Please sign in to delete your account.');
+      return;
+    }
+
+    Alert.alert(
+      'Delete Account',
+      'This will permanently remove your personal data (name, email, phone, location).\n\nYour tournament history will be kept in anonymised form.\n\nThis action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete My Account',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await apiDeleteAccount(token);
+              await clearToken();
+              router.replace('/(tabs)' as any);
+            } catch (e: any) {
+              setDeleting(false);
+              Alert.alert(
+                'Could not delete account',
+                e.message ?? 'Something went wrong. Please try again or contact support@thescoreboard.in',
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  return (
+    <TouchableOpacity
+      onPress={handleDelete}
+      disabled={deleting}
+      style={{ marginTop:8, borderRadius:12, borderWidth:1.5,
+        borderColor:c.border, padding:14, alignItems:'center',
+        opacity: deleting ? 0.5 : 1 }}>
+      {deleting
+        ? <ActivityIndicator size="small" color={c.muted} />
+        : <Text style={{ fontFamily:F.body, fontSize:13, color:c.muted }}>Delete Account</Text>
+      }
     </TouchableOpacity>
   );
 }

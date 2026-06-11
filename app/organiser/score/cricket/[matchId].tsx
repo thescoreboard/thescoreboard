@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { useAuthStore } from '../../../../src/store/auth';
 import {
-  apiUpdateMatchStatus, apiUpdateScore, apiFinishMatch, apiGetWorkspace,
+  apiUpdateMatchStatus, apiUpdateScore, apiFinishMatch, apiGetMatch,
 } from '../../../../src/api/client';
 
 const C = {
@@ -90,12 +90,9 @@ export default function CricketScorerScreen() {
   const [st, setSt] = useState({ runs: 0, wickets: 0, balls: 0, log: [] as string[] });
 
   const loadMatch = useCallback(async () => {
-    if (!params.tournamentId) { setLoading(false); return; }
     try {
-      const ws = await apiGetWorkspace(token!, parseInt(params.tournamentId));
-      const ev = (ws.events ?? []).find((e: any) => e.event_id === parseInt(params.eventId ?? '0'));
-      if (ev?.sport_config) setSportConfig(ev.sport_config);
-      const m  = (ev?.matches ?? []).find((m: any) => m.match_id === parseInt(matchId));
+      const m = await apiGetMatch(token!, parseInt(matchId));
+      if (m?.sport_config) setSportConfig(m.sport_config);
       if (m) {
         setMatch(m);
         const ls = m.live_state ?? {};
@@ -103,7 +100,7 @@ export default function CricketScorerScreen() {
       }
     } catch {}
     setLoading(false);
-  }, [matchId, params.tournamentId, params.eventId, token]);
+  }, [matchId, token]);
 
   useFocusEffect(useCallback(() => { loadMatch(); }, [loadMatch]));
 
@@ -416,10 +413,11 @@ export default function CricketScorerScreen() {
                   <Text style={{ fontSize: 11, fontWeight: '700', color: C.mutedHi, textTransform: 'uppercase', letterSpacing: 1 }}>
                     Batting: {battingName}
                   </Text>
-                  <Text style={{ fontSize: 52, fontWeight: '900', color: C.lime, lineHeight: 56 }}>
-                    {st.runs}<Text style={{ fontSize: 24, color: C.muted }}>/</Text>
-                    <Text style={{ fontSize: 24, color: C.red }}>{st.wickets}</Text>
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+                    <Text style={{ fontSize: 52, fontWeight: '900', color: C.lime, lineHeight: 52, includeFontPadding: false }}>{st.runs}</Text>
+                    <Text style={{ fontSize: 26, color: C.muted, lineHeight: 36, includeFontPadding: false, marginBottom: 2 }}>/</Text>
+                    <Text style={{ fontSize: 26, color: C.red, lineHeight: 36, includeFontPadding: false, marginBottom: 2 }}>{st.wickets}</Text>
+                  </View>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
                   <Text style={{ fontSize: 22, fontWeight: '900', color: C.ink }}>

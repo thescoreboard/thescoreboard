@@ -491,8 +491,19 @@ export default function TournamentPublicScreen() {
     }
   }, [slug]);
 
+  // Track WS connection state so the fallback poll can be suppressed when live
+  const wsLiveRef = useRef(false);
+
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { const id = setInterval(load, 8000); return () => clearInterval(id); }, [load]);
+  // Fallback poll: only fires when WebSocket is not connected (e.g. first load,
+  // WS reconnecting, or server restart). Interval stays registered so it acts
+  // as a heartbeat/recovery mechanism — it just no-ops while WS is live.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!wsLiveRef.current) load();
+    }, 8000);
+    return () => clearInterval(id);
+  }, [load]);
 
   // Log this tournament as recently viewed once data is available
   useEffect(() => {
@@ -508,6 +519,8 @@ export default function TournamentPublicScreen() {
 
   useTournamentSocket({
     slug,
+    onConnected:    () => { wsLiveRef.current = true;  },
+    onDisconnected: () => { wsLiveRef.current = false; },
     onData: (payload) => {
       setT((prev: any) => {
         if (!prev) return prev;

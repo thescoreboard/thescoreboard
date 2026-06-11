@@ -65,22 +65,40 @@ export const RESOLVED_API_URL: string = BASE_URL;
 
 // ── Core fetch wrapper ──────────────────────────────────────────
 
+// Default request timeout in ms. Keeps the app responsive on slow networks.
+const REQUEST_TIMEOUT_MS = 10_000;
+
 async function request(
   method: string,
   path: string,
   token: string | null,
   body?: unknown,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
 ): Promise<any> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      throw new Error(`Request timed out after ${timeoutMs}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (res.status === 401) {
     // bubble up — caller should clear token
@@ -191,6 +209,8 @@ export const apiGetMatches     = (token: string, eId: number) =>
   request('GET',    `/events/${eId}/matches`, token);
 export const apiCreateMatch    = (token: string, eId: number, d: any) =>
   request('POST',   `/events/${eId}/matches`, token, d);
+export const apiGetMatch          = (token: string, mId: number) =>
+  request('GET',    `/matches/${mId}`, token);
 export const apiUpdateMatchStatus = (token: string, mId: number, d: any) =>
   request('PATCH',  `/matches/${mId}/status`, token, d);
 export const apiUpdateScore    = (token: string, mId: number, d: any) =>
@@ -230,6 +250,8 @@ export const apiGetMyTournaments = (token: string) =>
   request('GET', '/auth/my-tournaments', token);
 export const apiGetMyStats       = (token: string) =>
   request('GET', '/auth/my-stats',       token);
+export const apiDeleteAccount    = (token: string) =>
+  request('DELETE', '/auth/me',          token);
 
 // ── Public ──────────────────────────────────────────────────────
 export const apiGetHomepage       = (q?: string) =>
