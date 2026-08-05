@@ -6,7 +6,7 @@ import { useTheme } from '../src/hooks/useTheme';
 import { F } from '../src/theme';
 
 const EFFECTIVE_DATE  = '30 May 2026';
-const CONTACT_EMAIL   = 'privacy@thescoreboard.in';
+const CONTACT_EMAIL   = 'teams@thescoreboard.in';
 
 export default function PrivacyPolicyScreen() {
   const { theme } = useTheme();
