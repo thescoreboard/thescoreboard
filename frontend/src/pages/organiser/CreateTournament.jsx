@@ -11,8 +11,6 @@ const SPORTS = [
   { key: "badminton",    label: "Badminton",    abbrev: "🏸" },
   { key: "cricket",      label: "Cricket",      abbrev: "🏏" },
   { key: "football",     label: "Football",     abbrev: "⚽" },
-  { key: "throw_ball",   label: "Throw Ball",   abbrev: "🤾" },
-  { key: "tug_of_war",   label: "Tug of War",   abbrev: "🪢" },
 ];
 
 const SPORT_SUBFORMATS = {
@@ -55,37 +53,16 @@ const SPORT_SUBFORMATS = {
       participant_type: "team", config: { team_size: 5, substitutes: 2 },
       configFields: [{ key: "substitutes", label: "Substitutes on bench", type: "stepper", min: 0, max: 3, default: 2, quickPicks: [0, 1, 2, 3] }],
     },
-  ],
-  throw_ball: [
     {
-      key: "standard", label: "Standard", sub: "7 vs 7 on court, first to 15 wins the set",
-      participant_type: "team", config: { sets_to_win: 2, gender_format: "open" },
+      key: "custom",    label: "Custom",    sub: "Set your own players-per-team and bench size",
+      participant_type: "team", config: { team_size: 11, substitutes: 5 },
       configFields: [
-        {
-          key: "gender_format", label: "Category", type: "select", default: "open",
-          options: [
-            { v: "open",       label: "Open" },
-            { v: "mixed",      label: "Mixed" },
-            { v: "women_only", label: "Women Only" },
-          ],
-        },
-        {
-          key: "sets_to_win", label: "Format", type: "select", default: 2,
-          options: [
-            { v: 2, label: "Best of 3 (first to 2 sets)" },
-            { v: 3, label: "Best of 5 (first to 3 sets)" },
-          ],
-        },
+        { key: "team_size",   label: "Players per team",     type: "number", min: 1, default: 11 },
+        { key: "substitutes", label: "Substitutes on bench", type: "number", min: 0, default: 5  },
       ],
     },
   ],
-  tug_of_war: [
-    {
-      key: "standard", label: "Standard", sub: "8 pullers per team, best of 3 pulls",
-      participant_type: "team", config: {},
-      configFields: [],
-    },
-  ],
+
 };
 
 const FORMATS = [
@@ -164,7 +141,6 @@ export default function CreateTournament() {
   const [name,      setName]      = useState("");
   const [venue,     setVenue]     = useState("");
   const [city,      setCity]      = useState("");
-  const [state,     setState]     = useState("");
   const [venueLat,  setVenueLat]  = useState(null);
   const [venueLng,  setVenueLng]  = useState(null);
   const [venueObj,  setVenueObj]  = useState(null);  // full picker value
@@ -246,7 +222,10 @@ export default function CreateTournament() {
 
   // ── Navigation ───────────────────────────────────────────────
   const canAdvance = () => {
-    if (step === 2) return events.length > 0;
+    if (step === 2) return events.length > 0 && events.every(e => {
+      const sf = getSubformat(e.sport_key, e.subformat_key);
+      return !sf?.configFields?.some(f => f.type === "number" && e.sport_config?.[f.key] === "");
+    });
     if (step === 3) return events.every(e => e.format !== "");
     if (step === 4) return name.trim().length > 0;
     return true;
@@ -278,21 +257,16 @@ export default function CreateTournament() {
     if (!isMultiSport) setTimeout(() => setStep(4), 280);
   };
 
-  const handleCityChange = (c) => {
-    setCity(c);
-    setState(c ? (CITY_STATE_MAP[c] || "") : "");
-  };
-
   // Called by VenuePicker when user selects a place from OSM results
   const handleVenueSelect = (v) => {
     setVenueObj(v);
     if (!v) {
-      setVenue(""); setCity(""); setState(""); setVenueLat(null); setVenueLng(null);
+      setVenue(""); setCity(""); setVenueLat(null); setVenueLng(null);
       return;
     }
     setVenue(v.name || "");
-    if (v.city)  setCity(v.city);
-    if (v.state) setState(v.state);
+    // Only adopt the picked venue's city when it's one of our supported cities.
+    if (CITY_STATE_MAP[v.city]) setCity(v.city);
     setVenueLat(v.lat ?? null);
     setVenueLng(v.lng ?? null);
   };
@@ -309,7 +283,7 @@ export default function CreateTournament() {
         name:           name.trim(),
         venue:          venue.trim() || null,
         city:           city  || null,
-        state:          state || null,
+        state:          CITY_STATE_MAP[city] || null,
         venue_lat:      venueLat  ?? null,
         venue_lng:      venueLng  ?? null,
         is_multi_sport: isMultiSport,
@@ -388,14 +362,14 @@ export default function CreateTournament() {
         ["Sport & Format", `${sl(singleEv.sport_key)}${singleSf ? " · " + singleSf.label : ""}`, 2],
         ["Structure",      singleEv.format ? fl(singleEv.format) : "—", 3],
         ["Name",           name, 4],
-        ["Location",       [venue, city, state].filter(Boolean).join(", ") || "—", 4],
+        ["Location",       [venue, city].filter(Boolean).join(", ") || "—", 4],
       ]
     : [
         ["Organisation", activeOrg?.name, null],
         ["Name",         name,            4],
         ["Type",         isMultiSport ? "Multi-Sport" : "Single Sport", 1],
         venue     && ["Venue",      venue + (venueLat ? ` 📍` : ""), 4],
-        city      && ["City",       [city, state].filter(Boolean).join(", "), 4],
+        city      && ["City",       city, 4],
       ].filter(Boolean);
 
   if (loadingOrgs) return <PageLoader />;
@@ -591,6 +565,14 @@ export default function CreateTournament() {
                                     }}>
                                     {field.options.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
                                   </select>
+                                ) : field.type === "number" ? (
+                                  <input className="input" type="number" min={field.min} style={{ width: 120 }}
+                                    value={ev.sport_config?.[field.key] ?? field.default}
+                                    onChange={e => {
+                                      const raw = e.target.value;
+                                      if (raw === "") return updateEventConfig(i, field.key, "");
+                                      updateEventConfig(i, field.key, Math.max(field.min ?? 0, parseInt(raw) || 0));
+                                    }} />
                                 ) : (
                                   <Stepper
                                     value={ev.sport_config?.[field.key] ?? field.default}
@@ -631,7 +613,7 @@ export default function CreateTournament() {
 
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16 }}>
                   <button className="btn btn-outline" onClick={back}>← Back</button>
-                  <button className="btn btn-primary" onClick={next} disabled={events.length === 0}>
+                  <button className="btn btn-primary" onClick={next} disabled={!canAdvance()}>
                     {isMultiSport ? "Continue to Details →" : "Continue →"}
                   </button>
                 </div>
@@ -691,21 +673,8 @@ export default function CreateTournament() {
                   <VenuePicker value={venueObj} onChange={handleVenueSelect} placeholder="Search venue, stadium, ground…" />
                 </div>
 
-                {/* City & State — auto-filled from venue picker, or manual fallback */}
-                <div className="field-row">
-                  <div className="field" style={{ flex: 1 }}>
-                    <label>City</label>
-                    <input className="input" placeholder="e.g. Chennai"
-                      value={city} onChange={e => setCity(e.target.value)} />
-                  </div>
-                  <div className="field" style={{ flex: 1 }}>
-                    <label>State</label>
-                    <input className="input" placeholder="e.g. Tamil Nadu"
-                      value={state} onChange={e => setState(e.target.value)} />
-                  </div>
-                </div>
-
-
+                {/* City — dropdown of supported cities (state is derived from it) */}
+                <CitySelect city={city} onChange={setCity} />
 
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16 }}>
                   <button className="btn btn-outline" onClick={back}>← Back</button>

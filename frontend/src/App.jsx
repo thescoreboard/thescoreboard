@@ -4,7 +4,7 @@ import { isLoggedIn, saveLoginRedirect } from "./api/client";
 
 // Landing stays eagerly loaded — it's the entry page and should paint
 // without waiting on a second chunk. Everything else is code-split so
-// visitors don't download the organiser/player/admin bundles up front.
+// visitors don't download the organiser/admin bundles up front.
 import Landing from "./pages/Landing";
 import ScrollToTop from "./components/shared/ScrollToTop";
 
@@ -12,16 +12,12 @@ import ScrollToTop from "./components/shared/ScrollToTop";
 const SportPage          = lazy(() => import("./pages/SportPage"));
 const Tournaments        = lazy(() => import("./pages/Tournaments"));
 const TournamentPublic   = lazy(() => import("./pages/TournamentPublic"));
-const TournamentRegister = lazy(() => import("./pages/TournamentRegister"));
 const Login              = lazy(() => import("./pages/auth/Login"));
 const Register           = lazy(() => import("./pages/auth/Register"));
 const PrivacyPolicy      = lazy(() => import("./pages/PrivacyPolicy"));
 const Terms              = lazy(() => import("./pages/Terms"));
 const About              = lazy(() => import("./pages/About"));
 const JoinTournament     = lazy(() => import("./pages/JoinTournament"));
-
-// Player
-const PlayerDashboard = lazy(() => import("./pages/player/PlayerDashboard"));
 
 // Admin
 const AdminPanel = lazy(() => import("./pages/admin/AdminPanel"));
@@ -74,11 +70,8 @@ export default function App() {
         <Route path="/cricket"                       element={<SportPage />} />
         <Route path="/table-tennis"                  element={<SportPage />} />
         <Route path="/badminton"                     element={<SportPage />} />
-        <Route path="/throw-ball"                    element={<SportPage />} />
-        <Route path="/tug-of-war"                    element={<SportPage />} />
         <Route path="/:sportUrl/tournament/:slug"    element={<TournamentPublic />} />
         <Route path="/t/:slug"                       element={<TournamentPublic />} />
-        <Route path="/t/:slug/register"              element={<TournamentRegister />} />
 
         {/* Auth */}
         <Route path="/login"    element={<Login />} />
@@ -105,9 +98,6 @@ export default function App() {
           path="/organiser/tournament/:tournamentId/event/:eventId"
           element={<RequireAuth><EventWorkspace /></RequireAuth>}
         />
-
-        {/* Player */}
-        <Route path="/player" element={<RequireAuth orgTheme={false}><PlayerDashboard /></RequireAuth>} />
 
         {/* Super-admin */}
         <Route path="/admin" element={<RequireAuth orgTheme={false}><AdminPanel /></RequireAuth>} />

@@ -14,12 +14,6 @@ const SPORT_OPTIONS = [
   { key: "badminton",   label: "Badminton",    icon: "🏸", color: "#38bdf8" },
 ];
 
-const STATUS_OPTIONS = [
-  { key: "",          label: "All" },
-  { key: "upcoming",  label: "Upcoming"  },
-  { key: "completed", label: "Done"      },
-];
-
 // ── Pill helper ───────────────────────────────────────────────────────────────
 
 function Pill({ active, onClick, children, accent }) {
@@ -76,13 +70,12 @@ function SkeletonCard() {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Tournaments() {
-  usePageMeta("Find Tournaments", "Browse local sports tournaments by sport, city and status. Register to play or follow live scores.");
+  usePageMeta("Find Tournaments", "Browse local sports tournaments by sport and city. Follow live scores.");
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Sync filters with URL search params so bookmarking / back-button works
   const [sport,  setSport]  = useState(searchParams.get("sport")  || "");
-  const [status, setStatus] = useState(searchParams.get("status") || "");
   const [city,   setCity]   = useState(searchParams.get("city")   || "");
   const [searchQ,setSearchQ]= useState(searchParams.get("q")      || "");
   const [inputQ, setInputQ] = useState(searchParams.get("q")      || "");
@@ -96,7 +89,7 @@ export default function Tournaments() {
     if (fetchingRef.current) return;
     fetchingRef.current = true;
     try {
-      const d = await getAllTournaments({ q: searchQ || undefined, sport: sport || undefined, status: status || undefined, city: city || undefined });
+      const d = await getAllTournaments({ q: searchQ || undefined, sport: sport || undefined, city: city || undefined });
       setData(d);
     } catch (e) {
       console.error(e);
@@ -104,7 +97,7 @@ export default function Tournaments() {
       fetchingRef.current = false;
       setLoading(false);
     }
-  }, [searchQ, sport, status, city]);
+  }, [searchQ, sport, city]);
 
   useEffect(() => {
     setLoading(true);
@@ -115,11 +108,10 @@ export default function Tournaments() {
   useEffect(() => {
     const p = {};
     if (sport)   p.sport  = sport;
-    if (status)  p.status = status;
     if (city)    p.city   = city;
     if (searchQ) p.q      = searchQ;
     setSearchParams(p, { replace: true });
-  }, [sport, status, city, searchQ, setSearchParams]);
+  }, [sport, city, searchQ, setSearchParams]);
 
   // Debounce search input
   useEffect(() => {
@@ -132,10 +124,10 @@ export default function Tournaments() {
   const total       = data?.total       || 0;
 
   const activeSportOption = SPORT_OPTIONS.find(s => s.key === sport) || SPORT_OPTIONS[0];
-  const hasFilters = sport || status || city || searchQ;
+  const hasFilters = sport || city || searchQ;
 
   function clearFilters() {
-    setSport(""); setStatus(""); setCity(""); setInputQ(""); setSearchQ("");
+    setSport(""); setCity(""); setInputQ(""); setSearchQ("");
   }
 
   return (
@@ -288,13 +280,6 @@ export default function Tournaments() {
 
             <div style={{ width: 1, height: 20, background: "var(--border)", margin: "0 4px" }} />
 
-            {/* Status pills */}
-            {STATUS_OPTIONS.map(s => (
-              <Pill key={s.key} active={status === s.key} onClick={() => setStatus(s.key)}>
-                {s.label}
-              </Pill>
-            ))}
-
             {/* City dropdown */}
             {cities.length > 0 && (
               <div style={{ position: "relative", marginLeft: 4 }}>
@@ -409,76 +394,19 @@ export default function Tournaments() {
             )}
           </div>
         ) : (
-          <>
-            {/* Upcoming section */}
-            {tournaments.filter(t => t.status === "upcoming").length > 0 && !status && (
-              <div style={{ marginBottom: 32 }}>
-                <SectionHeader
-                  label="Upcoming"
-                  count={tournaments.filter(t => t.status === "upcoming").length}
-                  accent="#D97706"
-                />
-                <div style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-                  gap: 16,
-                }}>
-                  {tournaments
-                    .filter(t => t.status === "upcoming")
-                    .map(t => (
-                      <TournamentCard
-                        key={t.tournament_id}
-                        tournament={t}
-                        onClick={() => navigate(`/t/${t.slug}`)}
-                      />
-                    ))}
-                </div>
-              </div>
-            )}
-
-            {/* Completed section */}
-            {tournaments.filter(t => t.status === "completed").length > 0 && !status && (
-              <div style={{ marginBottom: 32 }}>
-                <SectionHeader
-                  label="Completed"
-                  count={tournaments.filter(t => t.status === "completed").length}
-                  accent="#15803d"
-                />
-                <div style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-                  gap: 16,
-                }}>
-                  {tournaments
-                    .filter(t => t.status === "completed")
-                    .map(t => (
-                      <TournamentCard
-                        key={t.tournament_id}
-                        tournament={t}
-                        onClick={() => navigate(`/t/${t.slug}`)}
-                      />
-                    ))}
-                </div>
-              </div>
-            )}
-
-            {/* Single filtered grid (when a status filter is active) */}
-            {status && (
-              <div style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-                gap: 16,
-              }}>
-                {tournaments.map(t => (
-                  <TournamentCard
-                    key={t.tournament_id}
-                    tournament={t}
-                    onClick={() => navigate(`/t/${t.slug}`)}
-                  />
-                ))}
-              </div>
-            )}
-          </>
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+            gap: 16,
+          }}>
+            {tournaments.map(t => (
+              <TournamentCard
+                key={t.tournament_id}
+                tournament={t}
+                onClick={() => navigate(`/t/${t.slug}`)}
+              />
+            ))}
+          </div>
         )}
       </main>
 
@@ -491,33 +419,6 @@ export default function Tournaments() {
           © {new Date().getFullYear()} TheScoreBoard · Built for sports communities
         </div>
       </footer>
-    </div>
-  );
-}
-
-// ── Section header ────────────────────────────────────────────────────────────
-
-function SectionHeader({ label, count, accent }) {
-  return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 10,
-      marginBottom: 16,
-    }}>
-      <span style={{
-        fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 900,
-        textTransform: "uppercase", letterSpacing: 0.5,
-        color: accent || "var(--ink)",
-      }}>
-        {label}
-      </span>
-      <span style={{
-        fontSize: 11, fontWeight: 700, color: "var(--muted)",
-        background: "var(--elevated)", borderRadius: 4,
-        padding: "2px 8px", border: "1px solid var(--border)",
-      }}>
-        {count}
-      </span>
-      <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
     </div>
   );
 }

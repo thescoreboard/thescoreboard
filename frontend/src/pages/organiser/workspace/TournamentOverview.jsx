@@ -5,33 +5,20 @@ import OrgHeader from "../../../components/shared/OrgHeader";
 import PageLoader from "../../../components/shared/PageLoader";
 import SportSetupModal from "../../../components/organiser/SportSetupModal";
 import { ShareButton } from "../../../components/shared/ShareButton";
-import { DownloadExcelButton } from "../../../components/organiser/DownloadExcelButton";
 import { MediaUpload } from "../../../components/shared/MediaUpload";
 import SponsorsSection from "../../../components/organiser/SponsorsSection";
 import MembersSection from "../../../components/organiser/MembersSection";
 import TournamentBasicInfoSection from "../../../components/organiser/TournamentBasicInfoSection";
-import PaymentSettingsSection from "../../../components/organiser/PaymentSettingsSection";
 import SetupSection from "../../../components/organiser/SetupSection";
-import DatePicker from "../../../components/shared/DatePicker";
 import { SetupProgressHeader, SetupCreatedBanner, PublishCTA } from "../../../components/organiser/SetupProgressChrome";
-import { PrizePoolSection, RulesSection } from "../../../components/organiser/TournamentInfoEditor";
 import { getTournamentSetupChecklist, summarizeChecklist, isSectionComplete } from "../../../utils/tournamentCompleteness";
 
-const LIFECYCLE_LABELS = { draft: "Draft", live: "Live", completed: "Completed" };
 
 const SPORT_META = {
   table_tennis: { abbrev: "🏓", label: "Table Tennis", type: "individual" },
   badminton:    { abbrev: "🏸", label: "Badminton",    type: "individual" },
   cricket:      { abbrev: "🏏", label: "Cricket",      type: "team"       },
   football:     { abbrev: "⚽", label: "Football",     type: "team"       },
-  throw_ball:   { abbrev: "🤾", label: "Throw Ball",   type: "team"       },
-  tug_of_war:   { abbrev: "🪢", label: "Tug of War",   type: "team"       },
-};
-
-const STATUS_PILL = {
-  draft:     "pill-gray",
-  live:      "pill-orange",
-  completed: "pill-green",
 };
 
 export default function TournamentOverview() {
@@ -67,9 +54,8 @@ export default function TournamentOverview() {
     } catch (e) { flash("Error: " + e.message); }
   };
 
-  // "End Registration Now" reuses registration_end_date — setting it to
-  // yesterday closes registration immediately; editing the date again later
-  // reopens it. No separate manual-close flag needed.
+  // "End Registration Now" closes registration immediately by moving
+  // registration_end_date to yesterday (no separate manual-close flag).
   const handleEndRegistrationNow = async () => {
     try {
       const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
@@ -116,9 +102,7 @@ export default function TournamentOverview() {
     }
   };
 
-  const fullInfo = t.tournament_info || {};
   const labelStyle = { fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: "var(--muted)", fontFamily: "var(--font-display)", marginBottom: 4, display: "block" };
-  const inputStyle = { background: "var(--elevated)", border: "1px solid var(--border-mid)", borderRadius: 6, padding: "7px 10px", fontSize: 13, color: "var(--ink)", width: "100%", outline: "none", fontFamily: "inherit" };
   const fieldStyle = { marginBottom: 14 };
 
   const sportsConfigExtra = {
@@ -135,71 +119,17 @@ export default function TournamentOverview() {
     ),
   };
 
-  // Registration & Contact fields folded into Basic Info via `extra`
-  // instead of their own accordion block.
-  const contactExtra = {
-    statusSections: ["contact"],
-    initExtra: () => ({
-      contact: {
-        entry_fee:    fullInfo.contact?.entry_fee    || "",
-        reg_deadline: fullInfo.contact?.reg_deadline || "",
-        persons:      fullInfo.contact?.persons      || [],
-      },
-    }),
-    editableFields: (extraForm, setExtraForm) => {
-      const contact = extraForm.contact;
-      const setContact = (updater) => setExtraForm(f => ({ ...f, contact: updater(f.contact) }));
-      return (
-        <>
-          <div style={fieldStyle}>
-            <label style={labelStyle}>Registration Deadline</label>
-            <DatePicker value={contact.reg_deadline} onChange={val => setContact(c => ({ ...c, reg_deadline: val }))} placeholder="Pick a date" />
-          </div>
-          <div style={{ ...fieldStyle, gridColumn: "1 / -1" }}>
-            <label style={labelStyle}>Contact Persons</label>
-            {contact.persons.map((p, i) => (
-              <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, marginBottom: 8 }}>
-                <input style={inputStyle} placeholder="Name" value={p.name}
-                  onChange={e => setContact(c => ({ ...c, persons: c.persons.map((x, idx) => idx === i ? { ...x, name: e.target.value } : x) }))} />
-                <input style={inputStyle} placeholder="Phone / WhatsApp" value={p.phone}
-                  onChange={e => setContact(c => ({ ...c, persons: c.persons.map((x, idx) => idx === i ? { ...x, phone: e.target.value } : x) }))} />
-                <button className="btn btn-outline btn-sm" style={{ padding: "0 10px" }}
-                  onClick={() => setContact(c => ({ ...c, persons: c.persons.filter((_, idx) => idx !== i) }))}>×</button>
-              </div>
-            ))}
-            <button className="btn btn-outline btn-sm"
-              onClick={() => setContact(c => ({ ...c, persons: [...c.persons, { name: "", phone: "" }] }))}>
-              + Add Contact Person
-            </button>
-          </div>
-        </>
-      );
-    },
-    onSaveExtra: async (extraForm) => {
-      await updateTournament(t.org_id, t.tournament_id, { tournament_info: { ...fullInfo, contact: extraForm.contact } });
-    },
-  };
-
   const setupSections = (
     <>
       <TournamentBasicInfoSection
         t={t} checklist={setupChecklist}
         defaultOpen={
           !isSectionComplete(setupChecklist, "basic") ||
-          !isSectionComplete(setupChecklist, "format") ||
-          !isSectionComplete(setupChecklist, "contact")
+          !isSectionComplete(setupChecklist, "format")
         }
         onSaved={loadData} flash={flash}
-        extras={[sportsConfigExtra, contactExtra]}
+        extras={[sportsConfigExtra]}
       />
-
-      <PrizePoolSection orgId={t.org_id} tournamentId={t.tournament_id} fullInfo={fullInfo} checklist={setupChecklist}
-        defaultOpen={!isSectionComplete(setupChecklist, "prize")} onSaved={loadData} flash={flash} />
-
-      <RulesSection orgId={t.org_id} tournamentId={t.tournament_id} fullInfo={fullInfo} checklist={setupChecklist}
-        defaultOpen={!isSectionComplete(setupChecklist, "rules")} onSaved={loadData} flash={flash} />
-
-      <PaymentSettingsSection t={t} defaultOpen={false} onSaved={loadData} flash={flash} />
 
       <SetupSection icon="🎨" title="Branding" status="optional" defaultOpen={false}>
         <div style={{ position: "relative" }}>
@@ -280,14 +210,10 @@ export default function TournamentOverview() {
       <OrgHeader
         user={user}
         onLogout={() => { clearToken(); navigate("/", { replace: true }); }}
-        hideModePill={true}
         crumbs={[
           { label: "My Tournaments", path: "/organiser" },
           { label: t.name },
         ]}
-        right={t.status === "live" ? (
-          <div className="live-badge"><span className="live-dot" /> LIVE</div>
-        ) : null}
       />
 
       {msg && <div className="flash success">{msg}</div>}
@@ -358,12 +284,6 @@ export default function TournamentOverview() {
                 )}
               </span>
             )}
-            {t.start_date && <span>{t.start_date}</span>}
-            <span className={`pill ${STATUS_PILL[t.status] || "pill-gray"}`}
-              style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-              {t.status === "live" && <span className="live-dot" style={{ width: 6, height: 6 }}/>}
-              {LIFECYCLE_LABELS[t.status] || t.status}
-            </span>
             {t.is_multi_sport && (
               <span className="pill pill-gold">Multi-Sport</span>
             )}
@@ -415,15 +335,10 @@ export default function TournamentOverview() {
           );
         })()}
 
-        {/* ── EXPORT ── */}
-        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
-          <DownloadExcelButton tournamentId={t.tournament_id} flash={flash} />
-        </div>
-
-        {/* ── TOURNAMENT STATUS (unlocked once details are complete) ── */}
+        {/* ── PUBLISHING & REGISTRATION (unlocked once details are complete) ── */}
         {detailsComplete && (
           <div className="card" style={{ marginBottom: 20 }}>
-            <div className="card-title">Tournament Status</div>
+            <div className="card-title">Publishing &amp; Registration</div>
 
             {t.status === "draft" && (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
@@ -443,11 +358,7 @@ export default function TournamentOverview() {
             {t.status === "live" && (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                 <div style={{ fontSize: 13, color: "var(--muted)" }}>
-                  {t.registration_open
-                    ? (t.registration_end_date
-                        ? `Registration is open until ${t.registration_end_date}.`
-                        : "Registration is open — no closing date set yet.")
-                    : "Registration is currently closed."}
+                  {t.registration_open ? "Registration is open." : "Registration is currently closed."}
                 </div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {t.registration_open && (

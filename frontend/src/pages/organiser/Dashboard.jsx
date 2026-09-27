@@ -7,13 +7,7 @@ import {
 import OrgHeader from "../../components/shared/OrgHeader";
 import CitySelect, { CITY_STATE_MAP } from "../../components/shared/CitySelect";
 
-const STATUS_META = {
-  draft:     { label: "Draft",     pill: "pill-gray"  },
-  live:      { label: "Live",      pill: "pill-red"   },
-  completed: { label: "Completed", pill: "pill-green" },
-};
-
-const SPORT_EMOJI  = { table_tennis:"🏓", badminton:"🏸", cricket:"🏏", football:"⚽", throw_ball:"🤾", tug_of_war:"🪢" };
+const SPORT_EMOJI  = { table_tennis:"🏓", badminton:"🏸", cricket:"🏏", football:"⚽", };
 const sportIcons   = (events=[]) => {
   const keys = [...new Set(events.map(e => e.sport_key).filter(Boolean))];
   if (!keys.length) return null;
@@ -40,7 +34,6 @@ export default function Dashboard() {
   const [mobileMenuOpen,     setMobileMenuOpen]     = useState(false);
   const [orgForm,    setOrgForm]    = useState({ name:"", city:"", state:"" });
   const [orgLoading, setOrgLoading] = useState(false);
-  const [filterStatus, setFilterStatus] = useState("all");
   const [filterSport,  setFilterSport]  = useState("all");
 
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(""), 3000); };
@@ -128,19 +121,14 @@ export default function Dashboard() {
     } catch(e) { flash("Error: "+e.message); }
   };
 
-  const ORDER  = { live:0, registration:1, fixtures:2, draft:3, completed:4 };
-  const liveCount = tournaments.filter(t=>t.status==="live").length;
-
   const availableSports = [...new Set(
     tournaments.flatMap(t => (t.events||[]).map(e => e.sport_key).filter(Boolean))
   )];
 
-  const SPORT_LABEL = { table_tennis:"Table Tennis", badminton:"Badminton", cricket:"Cricket", football:"Football", throw_ball:"Throw Ball", tug_of_war:"Tug of War" };
+  const SPORT_LABEL = { table_tennis:"Table Tennis", badminton:"Badminton", cricket:"Cricket", football:"Football", };
 
   const sorted = [...tournaments]
-    .filter(t => filterStatus === "all" || t.status === filterStatus)
-    .filter(t => filterSport  === "all" || (t.events||[]).some(e => e.sport_key === filterSport))
-    .sort((a,b) => (ORDER[a.status]??9)-(ORDER[b.status]??9));
+    .filter(t => filterSport  === "all" || (t.events||[]).some(e => e.sport_key === filterSport));
 
   return (
     <div className="app">
@@ -288,9 +276,7 @@ export default function Dashboard() {
             <div style={{ display:"grid", gap:10, marginBottom:24 }} className="dashboard-stats">
               {[
                 { num: tournaments.length,                                       label:"Total",              color:"var(--ink)"    },
-                { num: liveCount,                                                 label:"Live Now",           color:"var(--primary)" },
                 { num: tournaments.filter(t=>t.registration_open).length,        label:"Registration Open",  color:"#92700A"       },
-                { num: tournaments.filter(t=>t.status==="completed").length,     label:"Completed",          color:"var(--green)"  },
               ].map(s => (
                 <div key={s.label} style={{
                   background:"var(--surface)", border:"2px solid var(--border)",
@@ -306,21 +292,6 @@ export default function Dashboard() {
           {/* Filters */}
           {tournaments.length > 0 && (
             <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:16 }}>
-              {/* Status chips */}
-              {["all","live","draft","completed"].map(s => {
-                const label = s === "all" ? "All" : (STATUS_META[s]?.label || s);
-                const active = filterStatus === s;
-                return (
-                  <button key={s} onClick={() => setFilterStatus(s)} style={{
-                    padding:"5px 12px", borderRadius:20, fontSize:11, fontWeight:700,
-                    textTransform:"uppercase", letterSpacing:1,
-                    border:`1.5px solid ${active ? "var(--primary)" : "var(--border)"}`,
-                    background: active ? "var(--primary)" : "var(--surface)",
-                    color: active ? "#fff" : "var(--muted)",
-                    cursor:"pointer", transition:"all .15s",
-                  }}>{label}</button>
-                );
-              })}
               {/* Sport chips — only show sports present in this org */}
               {availableSports.length > 0 && (
                 <>
@@ -345,11 +316,11 @@ export default function Dashboard() {
 
           <div className="section-label">
             Your Tournaments
-            {(filterStatus !== "all" || filterSport !== "all") && (
+            {filterSport !== "all" && (
               <span style={{ fontSize:11, color:"var(--muted)", fontWeight:400, marginLeft:8 }}>
                 {sorted.length} result{sorted.length!==1?"s":""}
                 {" · "}<span style={{ cursor:"pointer", color:"var(--primary)" }}
-                  onClick={() => { setFilterStatus("all"); setFilterSport("all"); }}>Clear</span>
+                  onClick={() => setFilterSport("all")}>Clear</span>
               </span>
             )}
           </div>
@@ -530,14 +501,12 @@ export default function Dashboard() {
 function TournamentCard({ tournament:t, showKebab, onKebabToggle, onManage, onDelete, onCopy, roleBadge, orgName }) {
   const events  = t.events || [];
   const icons   = sportIcons(events);
-  const sm      = STATUS_META[t.status] || STATUS_META.draft;
-  const isLive  = t.status === "live";
   return (
     <div
       onClick={onManage}
       style={{
         background: "var(--surface)",
-        border: `2px solid ${isLive ? "var(--primary)" : "var(--border)"}`,
+        border: "2px solid var(--border)",
         borderRadius: "var(--radius-lg)",
         padding: "14px 16px",
         display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -545,7 +514,7 @@ function TournamentCard({ tournament:t, showKebab, onKebabToggle, onManage, onDe
         position: "relative",
       }}
       onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.boxShadow = "0 4px 16px rgba(255,107,53,0.10)"; }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = isLive ? "var(--primary)" : "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
     >
       <div style={{ display:"flex", alignItems:"center", gap:12, flex:1, minWidth:0 }}>
         <div style={{
@@ -568,16 +537,6 @@ function TournamentCard({ tournament:t, showKebab, onKebabToggle, onManage, onDe
               : ([t.venue, t.city].filter(Boolean).join(" · ") || "No venue set")}
           </div>
           <div style={{ display:"flex", gap:6, marginTop:6, flexWrap:"wrap", alignItems:"center" }}>
-            <span style={{
-              display:"inline-flex", alignItems:"center", gap:4,
-              fontSize:10, fontWeight:800, letterSpacing:1.5, textTransform:"uppercase",
-              fontFamily:"var(--font-display)", padding:"3px 8px", borderRadius:4,
-              background:sm.pill==="pill-red"?"var(--red-dim)":sm.pill==="pill-gold"?"var(--gold-dim)":sm.pill==="pill-green"?"var(--green-dim)":"var(--elevated)",
-              color:sm.pill==="pill-red"?"var(--red)":sm.pill==="pill-gold"?"#92700A":sm.pill==="pill-green"?"#15803d":"var(--muted)",
-            }}>
-              {isLive && <span style={{ width:5, height:5, borderRadius:"50%", background:"var(--primary)", animation:"pulse 1.5s infinite", display:"inline-block" }}/>}
-              {sm.label}
-            </span>
             {roleBadge && (
               <span className={roleBadge === "admin" ? "pill pill-orange" : "pill pill-green"} style={{ fontSize:10 }}>
                 {roleBadge === "admin" ? "Admin" : "Staff"}

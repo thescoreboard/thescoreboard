@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
   getWorkspace,
   createPlayer, addPlayerToEvent, assignPlayerGroup, removePlayerFromEvent,
-  updateParticipantSeed, setParticipantPaid,
+  updateParticipantSeed,
   createGroup, generateFixtures, createMatch, generateGroupMatches,
   updateMatchStatus, updateScore, undoSet, rematchMatch, deleteMatch, walkoverMatch,
   getMe, clearToken, configureEvent, updateTournament, updateEvent,
@@ -15,20 +15,14 @@ import TTScorer        from "../../../components/scoring/TTScorer";
 import BadmintonScorer from "../../../components/scoring/BadmintonScorer";
 import CricketScorer   from "../../../components/scoring/CricketScorer";
 import FootballScorer  from "../../../components/scoring/FootballScorer";
-import ThrowBallScorer from "../../../components/scoring/ThrowBallScorer";
-import TugOfWarScorer  from "../../../components/scoring/TugOfWarScorer";
 import OrgHeader            from "../../../components/shared/OrgHeader";
-import { DownloadExcelButton } from "../../../components/organiser/DownloadExcelButton";
 import { IndividualTab, DoublesTab, TeamTab } from "../../../components/shared/ParticipantsTab";
 import SponsorsSection      from "../../../components/organiser/SponsorsSection";
 import MembersSection       from "../../../components/organiser/MembersSection";
 import { MediaUpload }      from "../../../components/shared/MediaUpload";
 import TournamentBasicInfoSection from "../../../components/organiser/TournamentBasicInfoSection";
-import PaymentSettingsSection from "../../../components/organiser/PaymentSettingsSection";
 import SetupSection         from "../../../components/organiser/SetupSection";
-import DatePicker           from "../../../components/shared/DatePicker";
 import { SetupProgressHeader, SetupCreatedBanner, PublishCTA, LockedTabPlaceholder } from "../../../components/organiser/SetupProgressChrome";
-import { PrizePoolSection, RulesSection } from "../../../components/organiser/TournamentInfoEditor";
 import { getEventSetupChecklist, summarizeChecklist, isSectionComplete } from "../../../utils/tournamentCompleteness";
 
 const SPORT_META = {
@@ -36,8 +30,6 @@ const SPORT_META = {
   badminton:    { abbrev: "🏸", label: "Badminton"    },
   cricket:      { abbrev: "🏏", label: "Cricket"      },
   football:     { abbrev: "⚽", label: "Football"     },
-  throw_ball:   { abbrev: "🤾", label: "Throw Ball"   },
-  tug_of_war:   { abbrev: "🪢", label: "Tug of War"   },
 };
 
 const API = import.meta.env.VITE_API_URL || "/api";
@@ -161,19 +153,6 @@ export default function EventWorkspace() {
 
   const liveCount       = currentEvent.matches?.filter(m => m.status === "live").length || 0;
   const activeMatchData = activeMatch ? currentEvent.matches?.find(m => m.match_id === activeMatch) : null;
-  // Full team rosters keyed by match position (1|2) — used by throw_ball/tug_of_war
-  // scorers, which need each team's TeamMember list to build lineup/weigh-in pickers.
-  const activeTeamMembers = (() => {
-    if (!activeMatchData) return { 1: [], 2: [] };
-    const membersFor = (teamId) => {
-      const ep = eventTeams.find(e => (e.team || e).team_id === teamId);
-      return (ep?.team || ep)?.members || [];
-    };
-    return {
-      1: membersFor(activeMatchData.player_1?.team_id),
-      2: membersFor(activeMatchData.player_2?.team_id),
-    };
-  })();
 
   // ── Setup Progress checklist — gates Registration/Fixtures/Live tabs ──
   const setupChecklist  = getEventSetupChecklist(t, currentEvent);
@@ -215,14 +194,6 @@ export default function EventWorkspace() {
     } catch (e) { flash("Error: " + e.message); }
   };
 
-  const handleSetPaid = async (epId, paid) => {
-    try {
-      await setParticipantPaid(currentEvent.event_id, epId, paid);
-      loadData(); loadTeams();
-      flash(paid ? "Marked as paid." : "Marked as awaiting review.");
-    } catch (e) { flash("Error: " + e.message); }
-  };
-
   const handleUpdateSeed = async (playerId, seedLevel) => {
     try {
       await updateParticipantSeed(currentEvent.event_id, playerId, seedLevel);
@@ -243,10 +214,8 @@ export default function EventWorkspace() {
     } catch (e) { flash("Error: " + e.message); }
   };
 
-  // "End Registration Now" — reuses the existing registration_end_date field
-  // instead of a separate manual-close flag: setting it to yesterday closes
-  // registration immediately, and the organiser can just edit the date again
-  // later if they want to reopen it.
+  // "End Registration Now" — closes registration immediately by moving
+  // registration_end_date to yesterday (no separate manual-close flag).
   const handleEndRegistrationNow = async () => {
     try {
       const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
@@ -420,7 +389,7 @@ export default function EventWorkspace() {
         const gId     = created.group_id;
         for (const pId of group.participants) {
           if (useTeam) {
-            await apiFetch(`/events/${eId}/teams?team_id=${pId}&group_id=${gId}`, { method: "POST" });
+            await apiFetch(`/events/${eId}/teams/${pId}?group_id=${gId}`, { method: "PATCH" });
           } else {
             await assignPlayerGroup(eId, pId, gId);
           }
@@ -506,7 +475,6 @@ export default function EventWorkspace() {
       <OrgHeader
         user={user}
         onLogout={() => { clearToken(); navigate("/", { replace: true }); }}
-        hideModePill={true}
         crumbs={[
           { label: "My Tournaments", path: "/organiser" },
           // For multi-sport tournaments, show the tournament overview as an intermediate crumb
@@ -519,7 +487,6 @@ export default function EventWorkspace() {
         right={(
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             {liveCount > 0 && <div className="live-badge"><span className="live-dot" /> {liveCount} LIVE</div>}
-            <DownloadExcelButton tournamentId={tournamentId} flash={flash} />
           </div>
         )}
       />
@@ -548,7 +515,6 @@ export default function EventWorkspace() {
           const inputStyle = { background: "var(--elevated)", border: "1px solid var(--border-mid)", borderRadius: 6, padding: "7px 10px", fontSize: 13, color: "var(--ink)", width: "100%", outline: "none", fontFamily: "inherit" };
           const labelStyle = { fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: "var(--muted)", fontFamily: "var(--font-display)", marginBottom: 4, display: "block" };
           const fieldStyle = { marginBottom: 14 };
-          const fullInfo = t.tournament_info || {};
 
           // Format & Play fields fold into the Basic Info section via `extra`
           // instead of being their own accordion block.
@@ -627,51 +593,6 @@ export default function EventWorkspace() {
             },
           };
 
-          // Registration & Contact fields folded into Basic Info via `extra`
-          // instead of their own accordion block.
-          const contactExtra = {
-            statusSections: ["contact"],
-            initExtra: () => ({
-              contact: {
-                entry_fee:    fullInfo.contact?.entry_fee    || "",
-                reg_deadline: fullInfo.contact?.reg_deadline || "",
-                persons:      fullInfo.contact?.persons      || [],
-              },
-            }),
-            editableFields: (extraForm, setExtraForm) => {
-              const contact = extraForm.contact;
-              const setContact = (updater) => setExtraForm(f => ({ ...f, contact: updater(f.contact) }));
-              return (
-                <>
-                  <div style={fieldStyle}>
-                    <label style={labelStyle}>Registration Deadline</label>
-                    <DatePicker value={contact.reg_deadline} onChange={val => setContact(c => ({ ...c, reg_deadline: val }))} placeholder="Pick a date" />
-                  </div>
-                  <div style={{ ...fieldStyle, gridColumn: "1 / -1" }}>
-                    <label style={labelStyle}>Contact Persons</label>
-                    {contact.persons.map((p, i) => (
-                      <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, marginBottom: 8 }}>
-                        <input style={inputStyle} placeholder="Name" value={p.name}
-                          onChange={e => setContact(c => ({ ...c, persons: c.persons.map((x, idx) => idx === i ? { ...x, name: e.target.value } : x) }))} />
-                        <input style={inputStyle} placeholder="Phone / WhatsApp" value={p.phone}
-                          onChange={e => setContact(c => ({ ...c, persons: c.persons.map((x, idx) => idx === i ? { ...x, phone: e.target.value } : x) }))} />
-                        <button className="btn btn-outline btn-sm" style={{ padding: "0 10px" }}
-                          onClick={() => setContact(c => ({ ...c, persons: c.persons.filter((_, idx) => idx !== i) }))}>×</button>
-                      </div>
-                    ))}
-                    <button className="btn btn-outline btn-sm"
-                      onClick={() => setContact(c => ({ ...c, persons: [...c.persons, { name: "", phone: "" }] }))}>
-                      + Add Contact Person
-                    </button>
-                  </div>
-                </>
-              );
-            },
-            onSaveExtra: async (extraForm) => {
-              await updateTournament(t.org_id, t.tournament_id, { tournament_info: { ...fullInfo, contact: extraForm.contact } });
-            },
-          };
-
           const eventCard = (
             <div className="card" style={{ marginBottom: 16 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
@@ -720,20 +641,11 @@ export default function EventWorkspace() {
                 t={t} checklist={setupChecklist}
                 defaultOpen={
                   !isSectionComplete(setupChecklist, "basic") ||
-                  !isSectionComplete(setupChecklist, "format") ||
-                  !isSectionComplete(setupChecklist, "contact")
+                  !isSectionComplete(setupChecklist, "format")
                 }
                 onSaved={loadData} flash={flash}
-                extras={[formatPlayExtra, contactExtra]}
+                extras={[formatPlayExtra]}
               />
-
-              <PrizePoolSection orgId={t.org_id} tournamentId={t.tournament_id} fullInfo={fullInfo} checklist={setupChecklist}
-                defaultOpen={!isSectionComplete(setupChecklist, "prize")} onSaved={loadData} flash={flash} />
-
-              <RulesSection orgId={t.org_id} tournamentId={t.tournament_id} fullInfo={fullInfo} checklist={setupChecklist}
-                defaultOpen={!isSectionComplete(setupChecklist, "rules")} onSaved={loadData} flash={flash} />
-
-              <PaymentSettingsSection t={t} defaultOpen={false} onSaved={loadData} flash={flash} />
 
               <SetupSection icon="🎨" title="Branding" status="optional" defaultOpen={false}>
                 <div style={{ maxWidth: 240 }}>
@@ -850,13 +762,8 @@ export default function EventWorkspace() {
               <div className="card" style={{ marginBottom: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
                   <div style={{ fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: "var(--primary)" }}>
-                    Tournament Status
+                    Publishing & Registration
                   </div>
-                  <span className={`pill ${t.status === "live" ? "pill-orange" : t.status === "completed" ? "pill-green" : "pill-gray"}`}
-                    style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                    {t.status === "live" && <span className="live-dot" style={{ width: 6, height: 6 }} />}
-                    {t.status?.charAt(0).toUpperCase() + t.status?.slice(1)}
-                  </span>
                 </div>
 
                 {t.status === "draft" && (
@@ -878,11 +785,7 @@ export default function EventWorkspace() {
                   <>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
                       <div style={{ fontSize: 13, color: "var(--muted)" }}>
-                        {t.registration_open
-                          ? (t.registration_end_date
-                              ? `Registration is open until ${t.registration_end_date}.`
-                              : "Registration is open — no closing date set yet.")
-                          : "Registration is currently closed."}
+                        {t.registration_open ? "Registration is open." : "Registration is currently closed."}
                       </div>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         {t.registration_open && (
@@ -989,8 +892,6 @@ export default function EventWorkspace() {
             onAssignGroup={handleAssignGroup}
             onRemovePlayer={handleRemovePlayer}
             onUpdateSeed={handleUpdateSeed}
-            onSetPaid={handleSetPaid}
-            paymentEnabled={t.payment_enabled}
             flash={flash}
           />
         )}
@@ -1001,8 +902,6 @@ export default function EventWorkspace() {
             pairs={eventTeams}
             onAddPair={handleAddPair}
             onRemovePair={handleRemovePair}
-            onSetPaid={handleSetPaid}
-            paymentEnabled={t.payment_enabled}
             flash={flash}
             numGroups={numGroups}
             setNumGroups={setNumGroups}
@@ -1016,8 +915,6 @@ export default function EventWorkspace() {
             teams={eventTeams}
             onAddTeam={handleAddTeam}
             onRemoveTeam={handleRemoveTeam}
-            onSetPaid={handleSetPaid}
-            paymentEnabled={t.payment_enabled}
             flash={flash}
           />
         )}
@@ -1260,34 +1157,13 @@ export default function EventWorkspace() {
           onClose={() => { setActiveMatch(null); loadData(); }} />
       )}
       {activeMatch && activeMatchData && currentEvent.sport_key === "football" && (
-        <FootballScorer match={activeMatchData} config={currentEvent.sport_config || {}}
+        <FootballScorer match={activeMatchData} config={{ ...(currentEvent.sport_config || {}), team_size: currentEvent.team_size ?? currentEvent.sport_config?.team_size }}
           onScore={(s1, s2, extra) => updateScore(activeMatch, { score_p1: s1, score_p2: s2, ...extra }).then(u => u?.status === "done" ? loadData() : patchMatchInData(u))}
           onFinish={(wp) => handleFinishMatch(activeMatch, wp)}
           onWalkover={(winPos) => handleWalkover(activeMatch, winPos)}
           onGoLive={() => handleMatchAction(activeMatch, "go_live")}
           onPause={() => handleMatchAction(activeMatch, "pause")}
           onReset={() => handleMatchAction(activeMatch, "reset")}
-          onClose={() => { setActiveMatch(null); loadData(); }} />
-      )}
-      {activeMatch && activeMatchData && currentEvent.sport_key === "throw_ball" && (
-        <ThrowBallScorer match={activeMatchData} config={currentEvent.sport_config || {}} teamMembers={activeTeamMembers}
-          onScore={(s1, s2, srv) => handleScore(activeMatch, s1, s2, srv)}
-          onUndoSet={() => { undoSet(activeMatch).then(loadData); }}
-          onWalkover={(winPos) => handleWalkover(activeMatch, winPos)}
-          onGoLive={() => handleMatchAction(activeMatch, "go_live")}
-          onPause={() => handleMatchAction(activeMatch, "pause")}
-          onReset={() => handleMatchAction(activeMatch, "reset")}
-          onRefresh={loadData}
-          onClose={() => { setActiveMatch(null); loadData(); }} />
-      )}
-      {activeMatch && activeMatchData && currentEvent.sport_key === "tug_of_war" && (
-        <TugOfWarScorer match={activeMatchData} teamMembers={activeTeamMembers}
-          onWalkover={(winPos) => handleWalkover(activeMatch, winPos)}
-          onGoLive={() => handleMatchAction(activeMatch, "go_live")}
-          onPause={() => handleMatchAction(activeMatch, "pause")}
-          onReset={() => handleMatchAction(activeMatch, "reset")}
-          onRefresh={loadData}
-          onSetWeightCategory={(cat) => updateMatchStatus(activeMatch, { status: activeMatchData.status, weight_category: cat }).then(loadData)}
           onClose={() => { setActiveMatch(null); loadData(); }} />
       )}
     </div>

@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.models.user import User
 from app.models.player import Team, TeamMember
-from app.models.group import EventParticipant
+from app.models.group import EventParticipant, Group
 from app.models.organization import Organization
 from app.models.event import Event
 from app.models.tournament import Tournament
@@ -29,7 +29,7 @@ class TeamMemberIn(BaseModel):
     role:          Optional[str] = "player"
     jersey_number: Optional[int] = None
     age:           Optional[int] = None
-    gender:        Optional[str] = None  # used by gender-restricted events (e.g. throw ball women-only)
+    gender:        Optional[str] = None  # used by gender-restricted events
 
 
 SEED_SCORES = {"beginner": 2, "intermediate": 5, "advanced": 8, "pro": 10}
@@ -208,6 +208,33 @@ def add_team_to_event(
     return {"ok": True, "ep_id": ep.ep_id}
 
 
+@router.patch("/events/{event_id}/teams/{team_id}")
+def assign_team_group(
+    event_id: int,
+    team_id: int,
+    group_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Set (or clear) an enrolled team's group."""
+    require_event_access(event_id, user, db)
+    ep = db.query(EventParticipant).filter(
+        EventParticipant.event_id == event_id,
+        EventParticipant.team_id == team_id,
+    ).first()
+    if not ep:
+        raise HTTPException(status_code=404, detail="Team not in this event")
+    if group_id is not None:
+        group = db.query(Group).filter(
+            Group.group_id == group_id, Group.event_id == event_id
+        ).first()
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found in this event")
+    ep.group_id = group_id
+    db.commit()
+    return {"ok": True}
+
+
 @router.delete("/events/{event_id}/teams/{team_id}")
 def remove_team_from_event(
     event_id: int,
@@ -241,8 +268,6 @@ def get_event_teams(event_id: int, db: Session = Depends(get_db)):
             "ep_id":    ep.ep_id,
             "group_id": ep.group_id,
             "team":     _serialize_team(ep.team) if ep.team else None,
-            "payment_status":         ep.payment_status,
-            "payment_screenshot_url": ep.payment_screenshot_url,
         }
         for ep in eps
     ]
@@ -262,7 +287,6 @@ class PublicTeamRegistration(BaseModel):
     event_id:      Optional[int] = None   # singular — doubles form
     event_ids:     List[int]     = []     # plural   — team form
     members:       List[TeamMemberIn]
-    payment_screenshot_url: Optional[str] = None
 
 
 @router.post("/public/tournaments/{tournament_id}/register-team",
@@ -285,11 +309,6 @@ def public_register_team(
     if not tournament.registration_open:
         raise HTTPException(status_code=400, detail="Tournament is not accepting registrations")
 
-    if tournament.payment_enabled and not data.payment_screenshot_url:
-        raise HTTPException(
-            status_code=400,
-            detail="Payment screenshot is required to complete registration.",
-        )
 
     # ── Normalise name (doubles sends "name", teams send "team_name")
     team_display_name = (data.name or data.team_name or "").strip()
@@ -361,11 +380,6 @@ def public_register_team(
             ))
 
     # ── Enrol in target events
-    if tournament.payment_enabled:
-        pay_status, pay_url, pay_submitted = "pending", data.payment_screenshot_url, datetime.now(timezone.utc)
-    else:
-        pay_status, pay_url, pay_submitted = "not_required", None, None
-
     enrolled = []
     for event in target_events:
         already = db.query(EventParticipant).filter(
@@ -376,9 +390,6 @@ def public_register_team(
             continue
         db.add(EventParticipant(
             event_id=event.event_id, team_id=team.team_id,
-            payment_status=pay_status,
-            payment_screenshot_url=pay_url,
-            payment_submitted_at=pay_submitted,
         ))
         enrolled.append(event.event_id)
 

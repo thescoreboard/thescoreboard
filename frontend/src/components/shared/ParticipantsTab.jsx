@@ -21,36 +21,6 @@ function useIsMobile() {
   return mobile;
 }
 
-// ── Payment status + "Mark Paid" checkbox ───────────────────────
-// Renders nothing when payment collection isn't in play for this
-// registration (payment_status "not_required" — the common case for
-// tournaments that don't collect entry fees, or players an organiser
-// added directly).
-function PaymentBadge({ p, onSetPaid }) {
-  if (!p.payment_status || p.payment_status === "not_required") return null;
-  const isPaid = p.payment_status === "paid";
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-      {p.payment_screenshot_url && (
-        <a href={p.payment_screenshot_url} target="_blank" rel="noopener noreferrer"
-          style={{ fontSize: 11, fontWeight: 600, color: "var(--primary)", textDecoration: "underline" }}>
-          View proof
-        </a>
-      )}
-      <label style={{
-        display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700,
-        cursor: onSetPaid ? "pointer" : "default",
-        color: isPaid ? "#16a34a" : "var(--gold)",
-      }}>
-        <input type="checkbox" checked={isPaid} disabled={!onSetPaid}
-          onChange={e => onSetPaid && onSetPaid(p.ep_id, e.target.checked)}
-          style={{ cursor: onSetPaid ? "pointer" : "default" }} />
-        {isPaid ? "Paid" : "Awaiting review"}
-      </label>
-    </div>
-  );
-}
-
 // ── Individual Players ────────────────────────────────────────
 const SEED_LEVELS = [
   { value: "",             label: "No seed"      },
@@ -81,7 +51,7 @@ function matchesAgeGroup(age, group) {
   return true;
 }
 
-export function IndividualTab({ event, onAddPlayer, onCreateGroup, onAssignGroup, onRemovePlayer, onUpdateSeed, onSetPaid, paymentEnabled, flash }) {
+export function IndividualTab({ event, onAddPlayer, onCreateGroup, onAssignGroup, onRemovePlayer, onUpdateSeed, flash }) {
   const isMobile = useIsMobile();
   const [pForm, setPForm] = useState({ name: "", age: "", gender: "Male", seed_level: "" });
 
@@ -241,11 +211,6 @@ export function IndividualTab({ event, onAddPlayer, onCreateGroup, onAssignGroup
                   <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>
                     {[p.age ? `Age ${p.age}` : null, p.gender].filter(Boolean).join(" · ") || "—"}
                   </div>
-                  {paymentEnabled && (
-                    <div style={{ marginTop: 4 }}>
-                      <PaymentBadge p={p} onSetPaid={onSetPaid} />
-                    </div>
-                  )}
                 </div>
 
                 {/* Seed select */}
@@ -277,7 +242,7 @@ export function IndividualTab({ event, onAddPlayer, onCreateGroup, onAssignGroup
           <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
             {/* Column headers */}
             <div style={{
-              display: "grid", gridTemplateColumns: paymentEnabled ? "1fr 56px 80px 130px 160px auto" : "1fr 56px 80px 130px auto",
+              display: "grid", gridTemplateColumns: "1fr 56px 80px 130px auto",
               gap: 8, padding: "6px 8px",
               fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1,
               color: "var(--muted)", borderBottom: "1px solid var(--border)",
@@ -286,13 +251,12 @@ export function IndividualTab({ event, onAddPlayer, onCreateGroup, onAssignGroup
               <span>Age</span>
               <span>Gender</span>
               <span>Skill Level</span>
-              {paymentEnabled && <span>Payment</span>}
               <span></span>
             </div>
 
             {filtered.map((p, idx) => (
               <div key={p.player_id} style={{
-                display: "grid", gridTemplateColumns: paymentEnabled ? "1fr 56px 80px 130px 160px auto" : "1fr 56px 80px 130px auto",
+                display: "grid", gridTemplateColumns: "1fr 56px 80px 130px auto",
                 gap: 8, padding: "9px 8px", alignItems: "center",
                 borderBottom: idx < filtered.length - 1 ? "1px solid var(--border)" : "none",
                 background: idx % 2 === 0 ? "transparent" : "rgba(0,0,0,0.015)",
@@ -312,7 +276,6 @@ export function IndividualTab({ event, onAddPlayer, onCreateGroup, onAssignGroup
                 >
                   {SEED_LEVELS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
-                {paymentEnabled && <div><PaymentBadge p={p} onSetPaid={onSetPaid} /></div>}
                 {onRemovePlayer && (
                   <button onClick={() => onRemovePlayer(p.player_id)}
                     style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", padding: "0 4px", fontSize: 16, lineHeight: 1, opacity: 0.6 }}
@@ -328,7 +291,7 @@ export function IndividualTab({ event, onAddPlayer, onCreateGroup, onAssignGroup
 }
 
 // ── Doubles Pairs ─────────────────────────────────────────────
-export function DoublesTab({ event, onAddPair, onRemovePair, pairs, flash, numGroups, setNumGroups, onGenerateGroups, onSetPaid, paymentEnabled }) {
+export function DoublesTab({ event, onAddPair, onRemovePair, pairs, flash, numGroups, setNumGroups, onGenerateGroups }) {
   const [form, setForm] = useState({
     pair_name:       "",
     player1_name:    "",
@@ -529,11 +492,6 @@ export function DoublesTab({ event, onAddPair, onRemovePair, pairs, flash, numGr
                       )}
                     </div>
                   )}
-                  {paymentEnabled && (
-                    <div style={{ marginTop: 6 }}>
-                      <PaymentBadge p={ep} onSetPaid={onSetPaid} />
-                    </div>
-                  )}
                 </div>
                 <button className="btn btn-sm btn-outline" style={{ color: "var(--red)", borderColor: "var(--red)" }}
                   onClick={() => onRemovePair(team.team_id)}>
@@ -554,7 +512,7 @@ export function DoublesTab({ event, onAddPair, onRemovePair, pairs, flash, numGr
 }
 
 // ── Team Sport ────────────────────────────────────────────────
-export function TeamTab({ event, onAddTeam, onRemoveTeam, teams, flash, onSetPaid, paymentEnabled }) {
+export function TeamTab({ event, onAddTeam, onRemoveTeam, teams, flash }) {
   const squadSize    = event.squad_size   || event.sport_config?.squad_size  || 11;
   const teamSize     = event.team_size    || event.sport_config?.team_size   || 11;
   const substitutes  = event.substitutes  || event.sport_config?.substitutes || 0;
@@ -708,11 +666,6 @@ export function TeamTab({ event, onAddTeam, onRemoveTeam, teams, flash, onSetPai
                 <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
                   {team.contact_name}{team.contact_phone ? ` · ${team.contact_phone}` : ""} · {team.member_count} players
                 </div>
-                {paymentEnabled && (
-                  <div style={{ marginTop: 6 }}>
-                    <PaymentBadge p={ep} onSetPaid={onSetPaid} />
-                  </div>
-                )}
               </div>
               <button className="btn btn-sm btn-outline" style={{ color: "var(--red)", borderColor: "var(--red)" }}
                 onClick={() => onRemoveTeam(team.team_id)}>

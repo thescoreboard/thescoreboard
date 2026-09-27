@@ -351,8 +351,6 @@ def get_my_tournaments(
                 "status":           t.status,
                 "sport_key":        event.sport_key,
                 "event_name":       event.name,
-                "start_date":       t.start_date.isoformat() if t.start_date else None,
-                "end_date":         t.end_date.isoformat()   if t.end_date   else None,
                 "city":             t.city,
                 "participant_status": ep.status,
                 "stage_reached":    finish_map.get(tid),
@@ -361,7 +359,7 @@ def get_my_tournaments(
     result = list(seen.values())
     status_order = {"live": 0, "registration": 1, "upcoming": 1, "fixtures": 2,
                     "completed": 3, "cancelled": 4}
-    result.sort(key=lambda x: (status_order.get(x["status"], 9), x["start_date"] or ""))
+    result.sort(key=lambda x: (status_order.get(x["status"], 9), x["name"]))
     return result
 
 
