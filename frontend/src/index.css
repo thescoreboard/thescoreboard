@@ -1987,9 +1987,8 @@
 }
 
 /* ── Content grids */
-.steps-grid          { grid-template-columns: repeat(3, 1fr); }
-.testimonials-grid   { grid-template-columns: repeat(3, 1fr); }
-.dual-cta-grid       { grid-template-columns: 1fr 1fr; }
+.organiser-cta          { display: grid; grid-template-columns: 1.15fr 1fr; gap: 56px; align-items: center; }
+.organiser-cta-features { grid-template-columns: 1fr 1fr; }
 
 /* ══════════════════════════════════════════════════════════
    RESPONSIVE — collapse at 1024px (everything below desktop)
@@ -2006,9 +2005,7 @@
   }
 
   /* Collapse 3-col grids */
-  .steps-grid        { grid-template-columns: 1fr 1fr !important; }
-  .testimonials-grid { grid-template-columns: 1fr 1fr !important; }
-  .dual-cta-grid     { grid-template-columns: 1fr !important; }
+  .organiser-cta     { grid-template-columns: 1fr !important; gap: 36px !important; padding: 40px 32px !important; }
 
   /* Sports grid: still 2 col at tablet but cards have enough room */
   .sports-browse-grid { grid-template-columns: repeat(2, 1fr) !important; }
@@ -2052,18 +2049,14 @@
   }
 
   /* All multi-col grids → 1 col */
-  .steps-grid        { grid-template-columns: 1fr !important; }
-  .testimonials-grid { grid-template-columns: 1fr !important; }
 
   /* Dual CTA card inner padding */
-  .dual-cta-card { padding: 32px 24px !important; }
+  .organiser-cta { padding: 32px 22px !important; }
+  .organiser-cta-features { grid-template-columns: 1fr !important; }
 
   /* Steps card */
-  .steps-card { padding: 24px 20px !important; }
 
   /* Testimonials card */
-  .testimonials-card { padding: 22px 18px !important; }
-
   /* Sports cards */
   .sport-browse-card { min-height: 80px !important; }
 }

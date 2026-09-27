@@ -28,8 +28,6 @@ def _serialize_dashboard_tournament(t: Tournament) -> dict:
         "venue":         t.venue,
         "city":          t.city,
         "state":         t.state,
-        "start_date":    str(t.start_date) if t.start_date else None,
-        "end_date":      str(t.end_date)   if t.end_date   else None,
         "poster_url":    t.poster_url,
         "logo_url":      t.logo_url,
         "events": [

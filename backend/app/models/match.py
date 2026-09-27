@@ -24,7 +24,6 @@ class Match(Base):
     status = Column(String(50), default="scheduled", index=True)  # scheduled | live | done
     table_number = Column(Integer, nullable=True)
     court_number = Column(Integer, nullable=True)  # for badminton/tennis
-    weight_category = Column(String(20), nullable=True)  # for tug of war
     # NOTE: `stage` deliberately has NO CHECK constraint — legacy rows carry
     # values like 'third'/'bye' that a strict enum would reject.
 

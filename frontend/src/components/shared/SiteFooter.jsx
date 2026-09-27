@@ -7,15 +7,11 @@ const FOOTER_SPORTS = [
   { key: "cricket",      url: "cricket"      },
   { key: "table_tennis", url: "table-tennis" },
   { key: "badminton",    url: "badminton"    },
-  { key: "throw_ball",   url: "throw-ball"   },
-  { key: "tug_of_war",   url: "tug-of-war"   },
 ];
 
 // Shared site footer — identical on the landing page and public tournament pages.
-// onHowItWorks lets the landing page smooth-scroll to its section; everywhere
-// else it falls back to navigating home with the #how-it-works hash.
 // All links are real anchors (react-router <Link>) so crawlers can follow them.
-export default function SiteFooter({ onHowItWorks }) {
+export default function SiteFooter() {
   const loggedIn = isLoggedIn();
 
   return (
@@ -75,12 +71,10 @@ export default function SiteFooter({ onHowItWorks }) {
         </div>
         {[
           {
-            title: "For Players",
+            title: "Explore",
             links: [
               { label: "Find Tournaments",   to: "/tournaments" },
-              { label: "Register to Play",   to: "/tournaments?status=upcoming" },
-              { label: "Live Scores",        to: "/tournaments?status=live" },
-              { label: "My Dashboard",       to: loggedIn ? "/player" : "/login" },
+              { label: "Live Scores",        to: "/tournaments" },
             ],
           },
           {
@@ -88,13 +82,6 @@ export default function SiteFooter({ onHowItWorks }) {
             links: [
               { label: "Create Tournament",  to: loggedIn ? "/organiser" : "/login" },
               { label: "Dashboard",          to: loggedIn ? "/organiser" : "/login" },
-              {
-                label: "How It Works",
-                to: "/#how-it-works",
-                onClick: onHowItWorks
-                  ? (e) => { e.preventDefault(); onHowItWorks(); }
-                  : undefined,
-              },
             ],
           },
           {

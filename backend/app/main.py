@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from app.config import settings
 from app.database import engine, Base
-from app.routers import auth, organizations, tournaments, tournament_members, events, players, matches, public, teams, media, share, ws as ws_router, dashboard, admin, throw_ball, tug_of_war
+from app.routers import auth, organizations, tournaments, tournament_members, events, players, matches, public, teams, media, share, ws as ws_router, dashboard, admin
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -111,8 +111,6 @@ app.include_router(tournaments.router,   prefix="/api",         tags=["tournamen
 app.include_router(events.router,        prefix="/api",         tags=["events"])
 app.include_router(players.router,       prefix="/api/players", tags=["players"])
 app.include_router(matches.router,       prefix="/api",         tags=["matches"])
-app.include_router(throw_ball.router,    prefix="/api",         tags=["throw-ball"])
-app.include_router(tug_of_war.router,    prefix="/api",         tags=["tug-of-war"])
 app.include_router(teams.router, prefix="/api", tags=["teams"])
 
 # ── Media upload (auth required) ──────────────────────────────

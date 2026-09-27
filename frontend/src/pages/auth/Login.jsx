@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
-  login, setToken, consumeLoginRedirect, consumeIntent,
-  getMe, setStoredUser, setMode,
+  login, setToken, consumeLoginRedirect,
+  getMe, setStoredUser,
 } from "../../api/client";
 import GoogleSignInButton from "../../components/auth/GoogleButton";
 import usePageMeta from "../../hooks/usePageMeta";
@@ -14,34 +14,10 @@ export default function Login() {
   const [error,   setError]   = useState("");
   const [loading, setLoading] = useState(false);
 
-  /** Fetch /auth/me, cache the user, then redirect based on intent → role → stored mode. */
+  /** Fetch /auth/me, cache the user, then land on the organiser dashboard (or the page they came from). */
   async function postAuthRedirect() {
-    try {
-      const u = await getMe();
-      setStoredUser(u);
-      // Consume the intent set at CTA click time (e.g. "REGISTER TO PLAY" → 'player')
-      const intent = consumeIntent();
-      const isOrganiser = Array.isArray(u?.roles) && u.roles.includes("organiser");
-      if (!isOrganiser) {
-        // Player-only account — always land on player dashboard regardless of intent
-        setMode("player");
-        navigate(consumeLoginRedirect("/player"), { replace: true });
-      } else if (intent) {
-        // Organiser account with an explicit CTA intent — honour it
-        setMode(intent);
-        navigate(consumeLoginRedirect(intent === "organiser" ? "/organiser" : "/player"), { replace: true });
-      } else {
-        // Organiser: respect any previously saved mode preference.
-        // If nothing stored yet (first login on this browser), default to organiser.
-        const storedMode = localStorage.getItem("tsb_mode");
-        const effectiveMode = storedMode || "organiser";
-        if (!storedMode) setMode("organiser");
-        navigate(consumeLoginRedirect(effectiveMode === "player" ? "/player" : "/organiser"), { replace: true });
-      }
-    } catch {
-      // If /me fails for any reason, fall back to organiser
-      navigate(consumeLoginRedirect("/organiser"), { replace: true });
-    }
+    try { setStoredUser(await getMe()); } catch { /* token is set; user is fetched on next load */ }
+    navigate(consumeLoginRedirect("/organiser"), { replace: true });
   }
 
   const handleSubmit = async () => {

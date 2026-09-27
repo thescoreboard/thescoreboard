@@ -34,7 +34,9 @@ class Tournament(Base):
     # Single-sport or multi-sport
     is_multi_sport = Column(Boolean, default=False)
 
-    # Dates
+    # Dates. start_date / end_date are legacy: the tournament page and API no
+    # longer read or write them (columns kept so no destructive migration is
+    # needed). Registration availability still uses the two dates below.
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
     registration_start_date = Column(Date, nullable=True)
@@ -55,13 +57,10 @@ class Tournament(Base):
     venue_lat = Column(Float, nullable=True)   # coordinates from OpenStreetMap picker
     venue_lng = Column(Float, nullable=True)
 
-    # Info & Rules sections (JSON dict keyed by section name)
+    # Legacy columns — prize pool / rules / contact info (tournament_info) and
+    # payment collection (payment_*) were removed from the product. Nothing
+    # reads or writes them any more; kept only to avoid a destructive migration.
     tournament_info = Column(JSON, nullable=True)
-
-    # Payment collection — one shared config for the whole tournament.
-    # payment_amount is in whole rupees. Collection is considered "enabled"
-    # only once the organiser has set both an amount and a way to pay
-    # (UPI ID and/or QR code) — see `payment_enabled` below.
     payment_amount  = Column(Integer, nullable=True)
     payment_upi_id  = Column(String(100), nullable=True)
     payment_qr_url  = Column(String(500), nullable=True)
@@ -96,12 +95,6 @@ class Tournament(Base):
         if self.registration_end_date and today > self.registration_end_date:
             return False
         return True
-
-    @property
-    def payment_enabled(self) -> bool:
-        """True when the organiser has configured payment collection: an
-        entry fee plus at least one way to pay (UPI ID or QR code)."""
-        return bool(self.payment_amount and (self.payment_upi_id or self.payment_qr_url))
 
 
 class Sponsor(Base):
