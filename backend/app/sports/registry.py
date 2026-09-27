@@ -5,24 +5,17 @@ To add a new sport:
   1. Create app/sports/<name>/scoring.py with a class extending BaseSport
   2. Create app/sports/<name>/__init__.py
   3. Import and register it here in _REGISTRY
-
-The 400 error on tournament creation was caused by unregistered sport keys.
-All 4 sports are now registered.
 """
 from app.sports.table_tennis.scoring import TableTennis
 from app.sports.badminton.scoring    import Badminton
 from app.sports.cricket.scoring      import Cricket
 from app.sports.football.scoring     import Football
-from app.sports.throw_ball.scoring   import ThrowBall
-from app.sports.tug_of_war.scoring   import TugOfWar
 
 _REGISTRY: dict = {
     "table_tennis": TableTennis(),
     "badminton":    Badminton(),
     "cricket":      Cricket(),
     "football":     Football(),
-    "throw_ball":   ThrowBall(),
-    "tug_of_war":   TugOfWar(),
 }
 
 # Human-readable labels for the API / frontend
@@ -31,8 +24,6 @@ _SPORT_META = {
     "badminton":    {"label": "Badminton",    "icon": "🏸", "url_slug": "badminton"},
     "cricket":      {"label": "Cricket",      "icon": "🏏", "url_slug": "cricket"},
     "football":     {"label": "Football",     "icon": "⚽", "url_slug": "football"},
-    "throw_ball":   {"label": "Throw Ball",   "icon": "🤾", "url_slug": "throw-ball"},
-    "tug_of_war":   {"label": "Tug of War",   "icon": "🪢", "url_slug": "tug-of-war"},
 }
 
 

@@ -10,7 +10,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
   getInviteInfo, acceptInvite, isLoggedIn,
-  saveLoginRedirect, saveIntent, setMode,
+  saveLoginRedirect,
 } from "../api/client";
 
 const ROLE_LABELS = {
@@ -38,7 +38,6 @@ export default function JoinTournament() {
     setError("");
     try {
       const res = await acceptInvite(token);
-      setMode("organiser");
       navigate(`/organiser/tournament/${res.tournament_id}`, { replace: true });
     } catch (e) {
       const msg = String(e.message || "");
@@ -51,7 +50,6 @@ export default function JoinTournament() {
 
   const goToAuth = (path) => {
     saveLoginRedirect(`/join/${token}`);
-    saveIntent("organiser");
     navigate(path);
   };
 

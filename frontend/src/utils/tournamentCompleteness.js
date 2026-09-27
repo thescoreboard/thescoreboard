@@ -2,23 +2,10 @@
 // Info page. Each item counts as one of the N required details; Basic Info
 // and Format & Play are worth several items each so that an already-configured
 // event (name/format/participant type set at creation) starts mostly done.
-function prizeRulesContactItems(t) {
-  const info = t.tournament_info || {};
-  const contact = info.contact || {};
-  return [
-    { key: "prize_pool",     section: "prize",   label: "Prize Pool",            done: (info.prize_pool || []).length > 0 },
-    { key: "rules",          section: "rules",    label: "Rules & Regulations",   done: !!(info.rules && info.rules.trim()) },
-    { key: "reg_deadline",   section: "contact",  label: "Registration Deadline", done: !!contact.reg_deadline },
-    { key: "contact_person", section: "contact",  label: "Contact Person",        done: (contact.persons || []).some(p => p.name && p.phone) },
-  ];
-}
-
 function basicInfoItems(t) {
   return [
-    { key: "venue",      section: "basic", label: "Venue",       done: !!t.venue },
-    { key: "city_state", section: "basic", label: "City & State", done: !!(t.city && t.state) },
-    { key: "start_date", section: "basic", label: "Start Date",   done: !!t.start_date },
-    { key: "end_date",   section: "basic", label: "End Date",     done: !!t.end_date },
+    { key: "venue", section: "basic", label: "Venue", done: !!t.venue },
+    { key: "city",  section: "basic", label: "City",  done: !!t.city },
   ];
 }
 
@@ -30,7 +17,6 @@ export function getEventSetupChecklist(t, event) {
     ...basicInfoItems(t),
     { key: "format",      section: "format", label: "Tournament Format", done: !!event?.format },
     { key: "participant", section: "format", label: "Participant Type",  done: !!event?.participant_type },
-    ...prizeRulesContactItems(t),
   ];
 }
 
@@ -41,7 +27,6 @@ export function getTournamentSetupChecklist(t, allSportsConfigured) {
     ...basicInfoItems(t),
     { key: "sports_configured_a", section: "format", label: "Sports Configured", done: !!allSportsConfigured },
     { key: "sports_configured_b", section: "format", label: "Sports Configured", done: !!allSportsConfigured },
-    ...prizeRulesContactItems(t),
   ];
 }
 

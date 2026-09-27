@@ -28,8 +28,6 @@ class TournamentCreate(BaseModel):
     state: Optional[str] = None
     venue_lat: Optional[float] = None
     venue_lng: Optional[float] = None
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
     is_multi_sport: bool = False
     is_published: bool = False
     primary_color: Optional[str] = None
@@ -39,8 +37,6 @@ class TournamentCreate(BaseModel):
 class TournamentUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
     registration_start_date: Optional[date] = None
     registration_end_date: Optional[date] = None
     venue: Optional[str] = None
@@ -56,10 +52,6 @@ class TournamentUpdate(BaseModel):
     status: Optional[str] = None
     is_active: Optional[bool] = None
     is_published: Optional[bool] = None
-    tournament_info: Optional[dict] = None
-    payment_amount: Optional[int] = None
-    payment_upi_id: Optional[str] = None
-    payment_qr_url: Optional[str] = None
 
 
 class SponsorCreate(BaseModel):
@@ -103,8 +95,6 @@ class TournamentOut(BaseModel):
     slug: str
     description: Optional[str]
     is_multi_sport: bool
-    start_date: Optional[date]
-    end_date: Optional[date]
     registration_start_date: Optional[date] = None
     registration_end_date: Optional[date] = None
     poster_url: Optional[str]
@@ -120,11 +110,6 @@ class TournamentOut(BaseModel):
     is_active: bool
     is_published: bool
     registration_open: bool = False
-    tournament_info: Optional[dict] = None
-    payment_amount: Optional[int] = None
-    payment_upi_id: Optional[str] = None
-    payment_qr_url: Optional[str] = None
-    payment_enabled: bool = False
     created_at: datetime
     sponsors: List[SponsorOut] = []
 

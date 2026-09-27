@@ -33,6 +33,7 @@ export default function CitySelect({
         onChange={e => onChange(e.target.value)}
       >
         <option value="">{placeholder}</option>
+        {city && !CITY_STATE_MAP[city] && <option value={city}>{city}</option>}
         {SUPPORTED_CITIES.map(c => (
           <option key={c} value={c}>{c}</option>
         ))}

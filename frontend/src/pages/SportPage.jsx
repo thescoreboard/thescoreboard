@@ -5,15 +5,13 @@ import Header from "../components/shared/Header";
 import TournamentCard, { SPORT_LABELS, SPORT_ICONS } from "../components/shared/TournamentCard";
 import usePageMeta from "../hooks/usePageMeta";
 
-const SPORT_ABBREV = { table_tennis: "🏓", badminton: "🏸", cricket: "🏏", football: "⚽", throw_ball: "🤾", tug_of_war: "🪢" };
+const SPORT_ABBREV = { table_tennis: "🏓", badminton: "🏸", cricket: "🏏", football: "⚽", };
 
 const SPORT_URL_TO_KEY = {
   football:       "football",
   cricket:        "cricket",
   "table-tennis": "table_tennis",
   badminton:      "badminton",
-  "throw-ball":   "throw_ball",
-  "tug-of-war":   "tug_of_war",
 };
 
 const SPORT_COLOR = {
@@ -21,15 +19,7 @@ const SPORT_COLOR = {
   cricket:      "#D97706",
   table_tennis: "#FF6B35",
   badminton:    "#38bdf8",
-  throw_ball:   "#ec4899",
-  tug_of_war:   "#a855f7",
 };
-
-const STATUS_FILTERS = [
-  { key: "",          label: "All"       },
-  { key: "upcoming",  label: "Upcoming"  },
-  { key: "completed", label: "Completed" },
-];
 
 export default function SportPage() {
   const location = useLocation();
@@ -42,7 +32,6 @@ export default function SportPage() {
   );
   const [data,        setData]        = useState(null);
   const [filterCity,  setFilterCity]  = useState("");
-  const [filterStatus,setFilterStatus]= useState("");
   const [searchQ,     setSearchQ]     = useState("");
 
   const sportKey = SPORT_URL_TO_KEY[sportUrl];
@@ -70,23 +59,7 @@ export default function SportPage() {
   const allTournaments = data?.tournaments || [];
   const cities         = data?.cities || [];
 
-  // Client-side status filter
-  const tournaments = filterStatus
-    ? allTournaments.filter(t => t.status === filterStatus)
-    : allTournaments;
-
-  const upcoming  = tournaments.filter(t => t.status === "upcoming");
-  const completed = tournaments.filter(t => t.status === "completed");
-
-  const pillStyle = (active) => ({
-    display: "inline-flex", alignItems: "center", gap: 4,
-    padding: "6px 14px", borderRadius: 6, cursor: "pointer",
-    fontSize: 12, fontWeight: 700, transition: "all 0.15s",
-    border: active ? "1.5px solid var(--primary)" : "1.5px solid var(--border)",
-    background: active ? "var(--primary-dim)" : "var(--surface)",
-    color: active ? "var(--primary)" : "var(--muted)",
-    whiteSpace: "nowrap",
-  });
+  const tournaments = allTournaments;
 
   return (
     <div className="app">
@@ -145,16 +118,6 @@ export default function SportPage() {
 
           {/* Filter pills row */}
           <div className="sport-filter-pills" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            {STATUS_FILTERS.map(f => (
-              <button
-                key={f.key}
-                style={pillStyle(filterStatus === f.key)}
-                onClick={() => setFilterStatus(f.key)}
-              >
-                {f.label}
-              </button>
-            ))}
-
             {cities.length > 0 && (
               <div style={{ position: "relative", marginLeft: 4 }}>
                 <svg style={{
@@ -185,9 +148,9 @@ export default function SportPage() {
             )}
 
             {/* Clear filters */}
-            {(filterCity || filterStatus) && (
+            {filterCity && (
               <button
-                onClick={() => { setFilterCity(""); setFilterStatus(""); }}
+                onClick={() => { setFilterCity(""); }}
                 style={{
                   background: "none", border: "1px solid var(--border)",
                   color: "var(--muted)", borderRadius: 6, padding: "6px 12px",
@@ -223,18 +186,18 @@ export default function SportPage() {
           <div className="empty">
             <div className="empty-icon" style={{ opacity: 0.25, fontFamily: "var(--font-display)", fontSize: 28, fontWeight: 900, color: accent }}>{SPORT_ABBREV[sportKey] || "?"}</div>
             <div className="empty-title">
-              {filterStatus || filterCity
+              {filterCity
                 ? "No Matching Tournaments"
                 : `No ${SPORT_LABELS[sportKey]} Tournaments Yet`}
             </div>
             <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 6 }}>
-              {filterStatus || filterCity
+              {filterCity
                 ? "Try clearing your filters."
                 : "Check back soon or organize one!"}
             </p>
-            {(filterStatus || filterCity) && (
+            {(filterCity) && (
               <button
-                onClick={() => { setFilterCity(""); setFilterStatus(""); }}
+                onClick={() => { setFilterCity(""); }}
                 className="btn btn-outline"
                 style={{ marginTop: 16, fontSize: 12 }}
               >
@@ -243,18 +206,7 @@ export default function SportPage() {
             )}
           </div>
         ) : (
-          <>
-            {!filterStatus && upcoming.length > 0 && (
-              <Section label="Upcoming" tournaments={upcoming} sportUrl={sportUrl} navigate={navigate} accent={accent} />
-            )}
-            {!filterStatus && completed.length > 0 && (
-              <Section label="Completed" tournaments={completed} sportUrl={sportUrl} navigate={navigate} accent={accent} />
-            )}
-            {filterStatus && (
-              <Section label={STATUS_FILTERS.find(f => f.key === filterStatus)?.label || filterStatus}
-                tournaments={tournaments} sportUrl={sportUrl} navigate={navigate} accent={accent} />
-            )}
-          </>
+          <Section label="Tournaments" tournaments={tournaments} sportUrl={sportUrl} navigate={navigate} accent={accent} />
         )}
       </div>
 

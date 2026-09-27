@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
-  register, setToken, consumeLoginRedirect, consumeIntent,
-  getMe, setStoredUser, setMode,
+  register, setToken, consumeLoginRedirect,
+  getMe, setStoredUser,
 } from "../../api/client";
 import GoogleSignInButton from "../../components/auth/GoogleButton";
 import usePageMeta from "../../hooks/usePageMeta";
@@ -58,20 +58,14 @@ export default function Register() {
   const passwordsMatch = confirmPassword.length > 0 && form.password === confirmPassword;
   const passwordsMismatch = confirmPassword.length > 0 && form.password !== confirmPassword;
 
-  /**
-   * New accounts have no org yet → roles = ["player"].
-   * Honour the CTA intent (player/organiser) if present; otherwise default to player.
-   * We still honour tsb_next in case the user was redirected here from a specific page.
-   */
+  /** New accounts land on the organiser dashboard (where they create their first organisation),
+   *  or on the page they were redirected from (tsb_next). */
   async function postRegisterRedirect() {
     try {
       const u = await getMe();
       setStoredUser(u);
     } catch { /* ignore — token is set, user will be fetched on next load */ }
-    const intent = consumeIntent();
-    const mode = intent || "player"; // new accounts default to player
-    setMode(mode);
-    navigate(consumeLoginRedirect(mode === "organiser" ? "/organiser" : "/player"), { replace: true });
+    navigate(consumeLoginRedirect("/organiser"), { replace: true });
   }
 
   const handleSubmit = async () => {

@@ -2,7 +2,6 @@
 Tournament routes — create wizard, workspace data, lifecycle management.
 """
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import Response
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 from datetime import datetime, timezone
@@ -17,14 +16,13 @@ from app.models.match import Match, MatchParticipant, MatchSet
 from app.models.group import Group, EventParticipant
 from app.schemas.tournament import TournamentCreate, TournamentUpdate, TournamentOut, SponsorCreate, SponsorUpdate, SponsorOut
 from app.utils.auth import get_current_user
-from app.utils.slug import generate_unique_slug, generate_slug
+from app.utils.slug import generate_unique_slug
 from app.utils.tournament_access import (
     require_tournament_access, require_org_access, require_event_access,
     ROLE_ADMIN, ROLE_STAFF,
 )
 from app.sports.registry import get_sport_engine
 from app.sports.bracket import build_bracket, assign_players_to_groups, order_group_qualifiers
-from app.services import export_excel
 
 router = APIRouter()
 
@@ -125,8 +123,6 @@ def create_tournament(
         state=data.state,
         venue_lat=data.venue_lat,
         venue_lng=data.venue_lng,
-        start_date=data.start_date,
-        end_date=data.end_date,
         is_multi_sport=data.is_multi_sport,
         is_published=data.is_published,
         primary_color=data.primary_color,
@@ -354,19 +350,12 @@ def get_workspace(
             "state":          t.state,
             "venue_lat":      t.venue_lat,
             "venue_lng":      t.venue_lng,
-            "start_date":     str(t.start_date) if t.start_date else None,
-            "end_date":       str(t.end_date)   if t.end_date   else None,
             "registration_start_date": str(t.registration_start_date) if t.registration_start_date else None,
             "registration_end_date":   str(t.registration_end_date)   if t.registration_end_date   else None,
             "status":         t.status,
             "registration_open": t.registration_open,
             "primary_color":  t.primary_color,
             "is_published":     t.is_published,
-            "tournament_info":  t.tournament_info,
-            "payment_amount":   t.payment_amount,
-            "payment_upi_id":   t.payment_upi_id,
-            "payment_qr_url":   t.payment_qr_url,
-            "payment_enabled":  t.payment_enabled,
             "poster_url":       t.poster_url or getattr(t, "banner_url", None),
             "logo_url":       t.logo_url,
             "sponsors": [
@@ -395,10 +384,6 @@ def get_workspace(
 
 
 def _serialize_participant(ep: EventParticipant, is_team: bool) -> dict:
-    payment = {
-        "payment_status":         ep.payment_status,
-        "payment_screenshot_url": ep.payment_screenshot_url,
-    }
     if is_team and ep.team:
         return {
             "ep_id":    ep.ep_id,
@@ -406,7 +391,6 @@ def _serialize_participant(ep: EventParticipant, is_team: bool) -> dict:
             "name":     ep.team.name,
             "seed":     ep.seed,
             "group_id": ep.group_id,
-            **payment,
         }
     elif ep.player:
         return {
@@ -418,288 +402,9 @@ def _serialize_participant(ep: EventParticipant, is_team: bool) -> dict:
             "seed":       ep.seed,
             "seed_level": ep.player.seed_level,
             "group_id":   ep.group_id,
-            **payment,
         }
-    return {"ep_id": ep.ep_id, "name": "Unknown", "seed": ep.seed, "seed_level": None, "group_id": ep.group_id, **payment}
+    return {"ep_id": ep.ep_id, "name": "Unknown", "seed": ep.seed, "seed_level": None, "group_id": ep.group_id}
 
-
-# ── Excel export ─────────────────────────────────────────────
-
-def _compute_event_standings(event: Event, matches: list, eps: list, is_team: bool, group_names_by_id: dict) -> list[dict]:
-    """Per-group standings rows for round_robin/group_knockout events, mirroring
-    get_standings()'s aggregation but reading from already-loaded matches/eps
-    (the export fetches everything in one bulk pass, no extra queries here)."""
-
-    def _pid(mp):
-        return mp.team_id if is_team else mp.player_id
-
-    def _name(mp):
-        if is_team and mp.team:
-            return mp.team.name
-        if mp.player:
-            return mp.player.name
-        return "Unknown"
-
-    standings: dict = {}
-
-    def _ensure(group_id, pid, name):
-        standings.setdefault(group_id, {})
-        if pid not in standings[group_id]:
-            standings[group_id][pid] = {
-                "name": name, "matches_played": 0, "wins": 0, "losses": 0,
-                "points_for": 0, "points_against": 0, "ranking_points": 0,
-            }
-
-    for m in matches:
-        if m.status != "done":
-            continue
-        parts = sorted(m.participants, key=lambda p: p.position)
-        if len(parts) < 2:
-            continue
-        mp1, mp2 = parts[0], parts[1]
-        p1_id, p2_id = _pid(mp1), _pid(mp2)
-        if not p1_id or not p2_id:
-            continue
-        gid = m.group_id
-        _ensure(gid, p1_id, _name(mp1))
-        _ensure(gid, p2_id, _name(mp2))
-        row1, row2 = standings[gid][p1_id], standings[gid][p2_id]
-
-        p1_pts = p2_pts = 0
-        for s in m.sets:
-            p1_pts += s.score_p1
-            p2_pts += s.score_p2
-        if not m.sets:
-            p1_pts, p2_pts = mp1.score, mp2.score
-
-        row1["matches_played"] += 1
-        row2["matches_played"] += 1
-        row1["points_for"]     += p1_pts
-        row1["points_against"] += p2_pts
-        row2["points_for"]     += p2_pts
-        row2["points_against"] += p1_pts
-
-        winner_pos = mp1.position if mp1.is_winner else (mp2.position if mp2.is_winner else None)
-        if winner_pos == 1:
-            row1["wins"] += 1; row1["ranking_points"] += 2; row2["losses"] += 1
-        elif winner_pos == 2:
-            row2["wins"] += 1; row2["ranking_points"] += 2; row1["losses"] += 1
-
-    # Include enrolled participants with 0 matches played too
-    for ep in eps:
-        pid = ep.team_id if is_team else ep.player_id
-        name = ep.team.name if (is_team and ep.team) else (ep.player.name if ep.player else "Unknown")
-        _ensure(ep.group_id, pid, name)
-
-    rows = []
-    for gid, participants in standings.items():
-        group_label = group_names_by_id.get(gid, "Standings")
-        ranked = sorted(participants.values(), key=lambda r: (-r["ranking_points"], -r["points_for"]))
-        for i, row in enumerate(ranked, start=1):
-            rows.append({
-                "event_name":       event.name,
-                "group_name":       group_label,
-                "rank":             i,
-                "participant_name": row["name"],
-                "matches_played":   row["matches_played"],
-                "wins":             row["wins"],
-                "losses":           row["losses"],
-                "points_for":       row["points_for"],
-                "points_against":   row["points_against"],
-                "ranking_points":   row["ranking_points"],
-            })
-    return rows
-
-
-@router.get("/tournaments/{tournament_id}/export")
-def export_tournament_excel(
-    tournament_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    """
-    Download an .xlsx workbook: tournament summary, standings, match results
-    and participants. Staff-or-above only (same gate as /workspace) — 404 if
-    the tournament doesn't exist, 403 if the caller has no access to it, so
-    an id can't be walked to pull another tournament's data.
-
-    Read-only and isolated from the live-scoring path: it does one bulk
-    fetch here and hands plain dicts to app.services.export_excel, which
-    never touches the DB or the WS layer.
-    """
-    t = _check_tournament_access(tournament_id, user, db)
-
-    events = db.query(Event).filter(Event.tournament_id == tournament_id).all()
-    event_ids = [e.event_id for e in events]
-
-    groups_by_event: dict = {}
-    eps_by_event: dict = {}
-    matches_by_event: dict = {}
-
-    if event_ids:
-        all_groups = db.query(Group).filter(Group.event_id.in_(event_ids)).order_by(Group.event_id, Group.name).all()
-        for g in all_groups:
-            groups_by_event.setdefault(g.event_id, []).append(g)
-
-        all_eps = (
-            db.query(EventParticipant)
-            .filter(EventParticipant.event_id.in_(event_ids))
-            .options(joinedload(EventParticipant.player), joinedload(EventParticipant.team))
-            .all()
-        )
-        for ep in all_eps:
-            eps_by_event.setdefault(ep.event_id, []).append(ep)
-
-        all_matches = (
-            db.query(Match)
-            .filter(Match.event_id.in_(event_ids))
-            .options(
-                joinedload(Match.participants).joinedload(MatchParticipant.player),
-                joinedload(Match.participants).joinedload(MatchParticipant.team),
-                joinedload(Match.sets),
-            )
-            .order_by(Match.stage, Match.round, Match.match_id)
-            .all()
-        )
-        for m in all_matches:
-            matches_by_event.setdefault(m.event_id, []).append(m)
-
-    def _pname(mp):
-        if not mp:
-            return "TBD"
-        if mp.player:
-            return mp.player.name
-        if mp.team:
-            return mp.team.name
-        return "TBD"
-
-    event_summaries: list = []
-    standings_rows: list = []
-    match_rows: list = []
-    participant_rows: list = []
-
-    for event in events:
-        group_names_by_id = {g.group_id: g.name for g in groups_by_event.get(event.event_id, [])}
-        eps     = eps_by_event.get(event.event_id, [])
-        matches = matches_by_event.get(event.event_id, [])
-        is_team = event.participant_type in ("team", "doubles_pair")
-
-        event_summaries.append({
-            "name":               event.name,
-            "sport_key":          event.sport_key,
-            "format":             event.format,
-            "participant_type":   event.participant_type,
-            "participant_count":  len(eps),
-            "match_count":        len(matches),
-            "done_count":         sum(1 for m in matches if m.status == "done"),
-            "status":             event.status,
-        })
-
-        for ep in eps:
-            name = ep.team.name if (is_team and ep.team) else (ep.player.name if ep.player else "Unknown")
-            participant_rows.append({
-                "event_name":     event.name,
-                "sport_key":      event.sport_key,
-                "name":           name,
-                "type":           "Team" if is_team else "Player",
-                "age":            None if is_team else (ep.player.age if ep.player else None),
-                "gender":         None if is_team else (ep.player.gender if ep.player else None),
-                "seed":           ep.seed,
-                "group_name":     group_names_by_id.get(ep.group_id),
-                "payment_status": ep.payment_status,
-            })
-
-        for m in matches:
-            parts = sorted(m.participants, key=lambda p: p.position)
-            p1 = parts[0] if len(parts) > 0 else None
-            p2 = parts[1] if len(parts) > 1 else None
-            winner = None
-            if p1 and p1.is_winner:
-                winner = _pname(p1)
-            elif p2 and p2.is_winner:
-                winner = _pname(p2)
-            match_rows.append({
-                "event_name":    event.name,
-                "sport_key":     event.sport_key,
-                "stage":         m.stage,
-                "round":         m.round,
-                "participant_1": _pname(p1),
-                "score_1":       p1.score if p1 else 0,
-                "participant_2": _pname(p2),
-                "score_2":       p2.score if p2 else 0,
-                "winner":        winner,
-                "status":        m.status,
-                "table_number":  m.table_number or m.court_number,
-                "scheduled_at":  str(m.scheduled_at) if m.scheduled_at else None,
-                "finished_at":   str(m.finished_at) if m.finished_at else None,
-            })
-
-        if event.format in ("round_robin", "group_knockout"):
-            standings_rows.extend(_compute_event_standings(event, matches, eps, is_team, group_names_by_id))
-
-    wb = export_excel.build_tournament_workbook(
-        tournament={
-            "name":       t.name,
-            "venue":      t.venue,
-            "city":       t.city,
-            "state":      t.state,
-            "start_date": str(t.start_date) if t.start_date else None,
-            "end_date":   str(t.end_date) if t.end_date else None,
-            "status":     t.status,
-        },
-        event_summaries=event_summaries,
-        standings_rows=standings_rows,
-        match_rows=match_rows,
-        participant_rows=participant_rows,
-    )
-
-    filename = export_excel.export_filename(generate_slug(t.name))
-    return Response(
-        content=wb.read(),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-# ── Payment review ─────────────────────────────────────────────
-
-@router.patch("/events/{event_id}/participants/{ep_id}/payment")
-def set_participant_paid(
-    event_id: int,
-    ep_id: int,
-    paid: bool,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    """Organiser marks a registration as paid (or reverts it back to pending)
-    after reviewing the uploaded payment screenshot. Only registrations with
-    payment collection enabled (payment_status != "not_required") can be
-    toggled — nothing to review otherwise."""
-    require_event_access(event_id, user, db)
-
-    ep = db.query(EventParticipant).filter(
-        EventParticipant.event_id == event_id,
-        EventParticipant.ep_id == ep_id,
-    ).first()
-    if not ep:
-        raise HTTPException(status_code=404, detail="Registration not found")
-    if ep.payment_status == "not_required":
-        raise HTTPException(status_code=400, detail="This registration has no payment to review")
-
-    if paid:
-        ep.payment_status = "paid"
-        ep.payment_confirmed_at = datetime.now(timezone.utc)
-        ep.payment_confirmed_by = user.user_id
-    else:
-        ep.payment_status = "pending"
-        ep.payment_confirmed_at = None
-        ep.payment_confirmed_by = None
-
-    db.commit()
-    return {"ok": True, "payment_status": ep.payment_status}
-
-
-# ── Update tournament ─────────────────────────────────────────
 
 @router.patch("/{org_id}/tournaments/{tournament_id}", response_model=TournamentOut)
 def update_tournament(
@@ -936,13 +641,9 @@ def generate_fixtures(
         return match
 
     # ── Helper: get all participant IDs for this event ────────
-    # Only registrations that are paid (or never required payment) are
-    # eligible for fixtures — unpaid registrations sit out until the
-    # organiser confirms their payment screenshot.
     def _get_all_ids():
         eps = db.query(EventParticipant).filter(
             EventParticipant.event_id == event_id,
-            EventParticipant.payment_status.in_(["not_required", "paid"]),
         ).all()
         if is_team_event:
             return [ep.team_id for ep in eps if ep.team_id]
@@ -1299,11 +1000,9 @@ def generate_groups(
             detail="Cannot regenerate groups — knockout bracket already generated.",
         )
 
-    # Collect all enrolled participants — only paid (or payment-not-required)
-    # registrations are eligible; unpaid ones sit out until confirmed.
+    # Collect all enrolled participants
     eps = db.query(EventParticipant).filter(
         EventParticipant.event_id == event_id,
-        EventParticipant.payment_status.in_(["not_required", "paid"]),
     ).all()
     if len(eps) < num_groups * 2:
         raise HTTPException(

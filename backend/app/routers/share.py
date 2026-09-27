@@ -224,9 +224,6 @@ def og_tournament_image(slug: str, db: Session = Depends(get_db)):
     sport_keys = list({e.sport_key for e in t.events if e.is_active})
     sport_label = SPORT_LABELS.get(sport_keys[0]) if len(sport_keys) == 1 else "Multi-Sport"
 
-    start = t.start_date.strftime("%d %b %Y") if t.start_date else None
-    end   = t.end_date.strftime("%d %b %Y")   if t.end_date   else None
-
     cache_key = f"tournament/{slug}.png"
 
     def _gen():
@@ -236,8 +233,6 @@ def og_tournament_image(slug: str, db: Session = Depends(get_db)):
             sport_label=sport_label,
             city=t.city,
             venue=t.venue,
-            start_date=start,
-            end_date=end,
             primary_color=t.primary_color,
         )
 
