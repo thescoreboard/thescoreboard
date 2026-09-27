@@ -1,0 +1,1113 @@
+/**
+ * Tournament Overview — mirrors TournamentOverview.jsx
+ * Lifecycle stepper, phase transitions, stats, events grid, share link.
+ */
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity, Alert,
+  ActivityIndicator, Share, RefreshControl, TextInput, Platform, Modal, StyleSheet,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useTheme } from '../../../../src/hooks/useTheme';
+import { useAuthStore } from '../../../../src/store/auth';
+import {
+  apiGetWorkspace, apiTransitionTournament, apiUpdateTournament, apiDeleteTournament,
+  apiConfigureEvent, shareUrl,
+} from '../../../../src/api/client';
+import { F, STATUS_LABELS, STATUS_COLORS } from '../../../../src/theme';
+
+const LIFECYCLE = ['draft', 'registration', 'fixtures', 'live', 'completed'];
+const LIFECYCLE_LABELS: Record<string, string> = {
+  draft: 'Draft', registration: 'Reg', fixtures: 'Fixtures', live: 'Live', completed: 'Done',
+};
+
+const SPORT_META: Record<string, { abbrev: string; label: string; type: string }> = {
+  table_tennis: { abbrev: 'T', label: 'Table Tennis', type: 'individual' },
+  badminton:    { abbrev: 'B', label: 'Badminton',    type: 'individual' },
+  cricket:      { abbrev: 'C', label: 'Cricket',      type: 'team'       },
+  football:     { abbrev: 'F', label: 'Football',     type: 'team'       },
+};
+
+export default function TournamentOverviewScreen() {
+  const { id }      = useLocalSearchParams<{ id: string }>();
+  const { theme }   = useTheme();
+  const router      = useRouter();
+  const { token }   = useAuthStore();
+  const c           = theme.colors;
+
+  const [data,        setData]        = useState<any>(null);
+  const [loading,     setLoading]     = useState(true);
+  const [refreshing,  setRefreshing]  = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
+  const [flash,       setFlash]       = useState('');
+  const [setupTarget, setSetupTarget] = useState<any>(null);  // event being configured
+  const [editingInfo, setEditingInfo] = useState(false);
+  const [infoForm,    setInfoForm]    = useState<{
+    overview:   string;
+    rules:      string;
+    prize_pool: Array<{ category: string; position: string; amount: string }>;
+    contact: {
+      entry_fee:    string;
+      reg_deadline: string;
+      persons:      Array<{ name: string; phone: string }>;
+    };
+  }>({
+    overview:   '',
+    rules:      '',
+    prize_pool: [],
+    contact: { entry_fee: '', reg_deadline: '', persons: [] },
+  });
+
+  const POSITIONS = ['1st Place', '2nd Place', '3rd Place', 'Runner Up'];
+
+  // ── Prize pool helpers ──────────────────────────────────────
+  const addPrize   = () => setInfoForm(p => ({ ...p, prize_pool: [...p.prize_pool, { category: '', position: '1st Place', amount: '' }] }));
+  const updatePrize = (i: number, field: string, val: string) =>
+    setInfoForm(p => ({ ...p, prize_pool: p.prize_pool.map((x, j) => j === i ? { ...x, [field]: val } : x) }));
+  const removePrize = (i: number) =>
+    setInfoForm(p => ({ ...p, prize_pool: p.prize_pool.filter((_, j) => j !== i) }));
+
+  // ── Contact helpers ─────────────────────────────────────────
+  const setContact = (key: string, val: string) =>
+    setInfoForm(p => ({ ...p, contact: { ...p.contact, [key]: val } }));
+  const addPerson   = () => setInfoForm(p => ({ ...p, contact: { ...p.contact, persons: [...p.contact.persons, { name: '', phone: '' }] } }));
+  const updatePerson = (i: number, field: string, val: string) =>
+    setInfoForm(p => ({ ...p, contact: { ...p.contact, persons: p.contact.persons.map((x, j) => j === i ? { ...x, [field]: val } : x) } }));
+  const removePerson = (i: number) =>
+    setInfoForm(p => ({ ...p, contact: { ...p.contact, persons: p.contact.persons.filter((_, j) => j !== i) } }));
+
+  const showFlash = (msg: string) => {
+    setFlash(msg);
+    setTimeout(() => setFlash(''), 3000);
+  };
+
+  const load = useCallback(async () => {
+    try {
+      const ws = await apiGetWorkspace(token!, parseInt(id));
+      setData(ws);
+      const info = ws.tournament?.tournament_info ?? {};
+      setInfoForm({
+        overview:   typeof info.overview === 'string' ? info.overview : '',
+        rules:      typeof info.rules    === 'string' ? info.rules    : '',
+        prize_pool: Array.isArray(info.prize_pool) ? info.prize_pool : [],
+        contact: {
+          entry_fee:    info.contact?.entry_fee    ?? '',
+          reg_deadline: info.contact?.reg_deadline ?? '',
+          persons:      Array.isArray(info.contact?.persons) ? info.contact.persons : [],
+        },
+      });
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
+    setLoading(false);
+    setRefreshing(false);
+  }, [id, token]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleTransition = async (status: string) => {
+    if (transitioning) return;
+    setTransitioning(true);
+    try {
+      await apiTransitionTournament(token!, parseInt(id), status);
+      await load();
+      showFlash(`Phase → ${LIFECYCLE_LABELS[status] ?? status}`);
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
+    setTransitioning(false);
+  };
+
+  const handleShare = async () => {
+    if (!data?.tournament?.slug) return;
+    const url = shareUrl.tournament(data.tournament.slug);
+    try {
+      await Share.share({
+        title:   data.tournament.name,
+        message: `${data.tournament.name} — Live on TheScoreBoard\n${url}`,
+      });
+    } catch {}
+  };
+
+  const handleSaveInfo = async () => {
+    try {
+      const hasContact = infoForm.contact.entry_fee || infoForm.contact.reg_deadline || infoForm.contact.persons.length > 0;
+      await apiUpdateTournament(token!, data.tournament.org_id, parseInt(id), {
+        tournament_info: {
+          overview:   infoForm.overview          || undefined,
+          rules:      infoForm.rules             || undefined,
+          prize_pool: infoForm.prize_pool.length > 0 ? infoForm.prize_pool : undefined,
+          contact:    hasContact ? infoForm.contact : undefined,
+        },
+      });
+      showFlash('Info saved!');
+      setEditingInfo(false);
+      load();
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
+  };
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Delete Tournament',
+      `Delete "${t?.name ?? 'this tournament'}"? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: async () => {
+            try {
+              await apiDeleteTournament(token!, t.org_id, parseInt(id));
+              router.replace('/(tabs)/organiser' as any);
+            } catch (e: any) {
+              Alert.alert('Error', e.message);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  if (loading && !data) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
+        <ActivityIndicator style={{ flex: 1 }} color={c.primary} />
+      </SafeAreaView>
+    );
+  }
+
+  const t           = data?.tournament ?? {};
+  const events      = data?.events     ?? [];
+  const stats       = data?.stats      ?? {};
+  const currentIdx  = LIFECYCLE.indexOf(t.status ?? 'draft');
+
+  const unconfigured  = events.filter((ev: any) => ev.is_configured === false).length;
+  const isTeamSport   = events.some((ev: any) => ev.participant_type === 'team');
+  const participantLbl = isTeamSport ? 'Teams' : 'Players';
+
+  const statCards = [
+    ...(t.is_multi_sport ? [{ label: 'Events',  value: stats.total_events }] : []),
+    { label: participantLbl,       value: stats.total_players },
+    { label: 'Matches',            value: stats.total_matches },
+    { label: 'Live',               value: stats.live_matches, highlight: stats.live_matches > 0 },
+  ];
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
+      {/* Header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: c.border }}>
+        <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/organiser' as any)}>
+          <Text style={{ color: c.muted, fontSize: 14 }}>← Back</Text>
+        </TouchableOpacity>
+        <Text style={{ fontSize: 14, fontWeight: '800', color: c.ink, flex: 1, marginHorizontal: 12 }}
+          numberOfLines={1}>{t.name}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {t.status === 'live' && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
+              backgroundColor: c.primary + '22', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: c.primary }} />
+              <Text style={{ fontSize: 11, fontWeight: '800', color: c.primary }}>LIVE</Text>
+            </View>
+          )}
+          {/* Delete button in header */}
+          <TouchableOpacity
+            onPress={handleDelete}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={{ borderRadius: 8, borderWidth: 1, borderColor: '#ef444444',
+              paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#ef444410' }}>
+            <Text style={{ color: '#ef4444', fontSize: 12, fontWeight: '700' }}>Delete</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Flash */}
+      {!!flash && (
+        <View style={{ backgroundColor: '#22c55e22', borderBottomWidth: 1, borderBottomColor: '#22c55e44',
+          paddingHorizontal: 16, paddingVertical: 10 }}>
+          <Text style={{ color: '#22c55e', fontSize: 13, fontWeight: '700' }}>{flash}</Text>
+        </View>
+      )}
+
+      <ScrollView
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={c.primary} />}
+        contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+      >
+        {/* Tournament title + meta */}
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{ fontFamily: F.display, fontSize: 18, color: c.ink, letterSpacing: -0.5, marginBottom: 6 }}>{(t.name ?? '').toUpperCase()}</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+            {t.city && <Text style={{ fontSize: 12, color: c.muted }}>{[t.venue, t.city].filter(Boolean).join(', ')}</Text>}
+            {t.start_date && <Text style={{ fontSize: 12, color: c.muted }}>{t.start_date}</Text>}
+            <View style={{ borderRadius: 999, backgroundColor: (STATUS_COLORS[t.status] ?? '#888') + '22',
+              paddingHorizontal: 10, paddingVertical: 3 }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: STATUS_COLORS[t.status] ?? '#888' }}>
+                {STATUS_LABELS[t.status] ?? t.status}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Setup warning */}
+        {unconfigured > 0 && (
+          <View style={{ backgroundColor: 'rgba(255,204,0,0.12)', borderWidth: 1, borderColor: 'rgba(255,204,0,0.4)',
+            borderRadius: 10, padding: 14, marginBottom: 16, flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+            <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#ffcc00',
+              alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 12, fontWeight: '900', color: '#1a1a1a' }}>!</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 12, fontWeight: '800', color: '#b8860b', marginBottom: 2 }}>
+                {unconfigured} sport{unconfigured !== 1 ? 's' : ''} need setup
+              </Text>
+              <Text style={{ fontSize: 12, color: c.muted }}>
+                Tap each sport card below to configure it.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Stats */}
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
+          {statCards.map(({ label, value, highlight }) => (
+            <View key={label} style={{ flex: 1, backgroundColor: c.surface, borderRadius: 10,
+              borderWidth: 1, borderColor: c.border, padding: 10, alignItems: 'center' }}>
+              <Text style={{ fontFamily: F.display, fontSize: 18, color: highlight ? c.primary : c.ink }}>{value ?? 0}</Text>
+              <Text style={{ fontFamily: F.bold, fontSize: 9, color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2 }}>{label}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Phase control */}
+        <View style={{ backgroundColor: c.surface, borderRadius: 14, borderWidth: 1, borderColor: c.border,
+          padding: 16, marginBottom: 16 }}>
+          <Text style={{ fontFamily: F.bold, fontSize: 11, fontWeight: '700', color: c.muted, textTransform: 'uppercase',
+            letterSpacing: 1, marginBottom: 14 }}>Tournament Phase</Text>
+
+          {/* Stepper */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+            {LIFECYCLE.map((phase, i) => {
+              const state = i < currentIdx ? 'done' : i === currentIdx ? 'active' : 'pending';
+              return (
+                <React.Fragment key={phase}>
+                  <TouchableOpacity
+                    onPress={() => handleTransition(phase)}
+                    style={{ alignItems: 'center', opacity: transitioning ? 0.6 : 1 }}
+                  >
+                    <View style={{
+                      width: 28, height: 28, borderRadius: 14,
+                      backgroundColor: state === 'pending' ? c.elevated : c.primary,
+                      borderWidth: state === 'pending' ? 2 : 0, borderColor: c.border,
+                      alignItems: 'center', justifyContent: 'center',
+                      // cross-platform glow on active step
+                      ...Platform.select({
+                        web:     state === 'active' ? { boxShadow: `0 0 8px ${c.primary}99` } : {},
+                        default: state === 'active' ? { shadowColor: c.primary, shadowOpacity: 0.5, shadowRadius: 6, elevation: 4 } : {},
+                      }),
+                    }}>
+                      <Text style={{ fontSize: 10, fontWeight: '900',
+                        color: state === 'pending' ? c.muted : c.bg }}>
+                        {state === 'done' ? '✓' : String(i + 1)}
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 8, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5,
+                      color: state === 'pending' ? c.muted : c.primary, marginTop: 4 }}>
+                      {LIFECYCLE_LABELS[phase]}
+                    </Text>
+                  </TouchableOpacity>
+                  {i < LIFECYCLE.length - 1 && (
+                    <View style={{ flex: 1, height: 2, marginHorizontal: 2, marginBottom: 18,
+                      backgroundColor: i < currentIdx ? c.primary : c.border }} />
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </View>
+
+          {/* Quick buttons */}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {LIFECYCLE.map(phase => (
+              <TouchableOpacity key={phase}
+                onPress={() => handleTransition(phase)}
+                disabled={transitioning}
+                style={{ borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7,
+                  backgroundColor: t.status === phase ? c.primary : c.elevated,
+                  borderWidth: 1, borderColor: t.status === phase ? c.primary : c.border }}>
+                <Text style={{ fontSize: 12, fontWeight: '700',
+                  color: t.status === phase ? '#fff' : c.muted }}>
+                  {LIFECYCLE_LABELS[phase]}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Share */}
+        <View style={{ backgroundColor: c.surface, borderRadius: 14, borderWidth: 1, borderColor: c.border,
+          padding: 16, marginBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text style={{ fontFamily: F.bold, fontSize: 11, fontWeight: '700', color: c.muted, textTransform: 'uppercase', letterSpacing: 1 }}>
+            Share Tournament
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity onPress={handleShare}
+              style={{ backgroundColor: c.primary, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 }}>
+              <Text style={{ fontFamily: F.bold, color: '#fff', fontWeight: '700', fontSize: 12 }}>Share ↗</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push(`/t/${t.slug}`)}
+              style={{ borderRadius: 8, borderWidth: 1, borderColor: c.border, paddingHorizontal: 14, paddingVertical: 8 }}>
+              <Text style={{ color: c.ink, fontWeight: '700', fontSize: 13 }}>View ↗</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Tournament Info / Rules Editor */}
+        <View style={{ backgroundColor: c.surface, borderRadius: 14, borderWidth: 1, borderColor: c.border,
+          padding: 16, marginBottom: 16 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <Text style={{ fontFamily: F.display, fontSize: 12, color: c.ink, letterSpacing: -0.3 }}>Tournament Info</Text>
+            <TouchableOpacity onPress={() => setEditingInfo(v => !v)}>
+              <Text style={{ color: c.primary, fontSize: 13, fontWeight: '700' }}>
+                {editingInfo ? 'Cancel' : 'Edit'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {editingInfo ? (
+            <View style={{ gap: 16 }}>
+
+              {/* ── Overview ── */}
+              <View>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: c.muted,
+                  textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Overview</Text>
+                <TextInput
+                  style={{ backgroundColor: c.elevated, borderRadius: 10, borderWidth: 1, borderColor: c.border,
+                    color: c.ink, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14,
+                    minHeight: 80, textAlignVertical: 'top' }}
+                  value={infoForm.overview}
+                  onChangeText={v => setInfoForm(p => ({ ...p, overview: v }))}
+                  multiline
+                  placeholder="Brief description of the tournament…"
+                  placeholderTextColor={c.muted}
+                />
+              </View>
+
+              {/* ── Prize Pool ── */}
+              <View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: c.muted,
+                    textTransform: 'uppercase', letterSpacing: 0.5 }}>Prize Pool</Text>
+                  <TouchableOpacity onPress={addPrize}
+                    style={{ borderRadius: 8, borderWidth: 1.5, borderColor: c.primary,
+                      paddingHorizontal: 12, paddingVertical: 5 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: c.primary }}>+ Add Prize</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {infoForm.prize_pool.length === 0 && (
+                  <Text style={{ fontSize: 13, color: c.muted, fontStyle: 'italic' }}>
+                    No prizes added yet.
+                  </Text>
+                )}
+
+                {infoForm.prize_pool.map((prize, i) => (
+                  <View key={i} style={{ backgroundColor: c.elevated, borderRadius: 10, borderWidth: 1,
+                    borderColor: c.border, padding: 12, marginBottom: 8, gap: 8 }}>
+
+                    {/* Category */}
+                    <TextInput
+                      style={{ borderRadius: 8, borderWidth: 1, borderColor: c.border,
+                        color: c.ink, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13,
+                        backgroundColor: c.surface }}
+                      value={prize.category}
+                      onChangeText={v => updatePrize(i, 'category', v)}
+                      placeholder="Category (e.g. Men's Singles)"
+                      placeholderTextColor={c.muted}
+                    />
+
+                    {/* Position pills — plain row/wrap to avoid nested ScrollView on web */}
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                      {POSITIONS.map(pos => (
+                        <TouchableOpacity key={pos} onPress={() => updatePrize(i, 'position', pos)}
+                          style={{ borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6,
+                            backgroundColor: prize.position === pos ? c.primary : 'transparent',
+                            borderWidth: 1.5, borderColor: prize.position === pos ? c.primary : c.border }}>
+                          <Text style={{ fontSize: 12, fontWeight: '700',
+                            color: prize.position === pos ? '#fff' : c.muted }}>{pos}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    {/* Amount + remove */}
+                    <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                      <TextInput
+                        style={{ flex: 1, borderRadius: 8, borderWidth: 1, borderColor: c.border,
+                          color: c.ink, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13,
+                          backgroundColor: c.surface }}
+                        value={prize.amount}
+                        onChangeText={v => updatePrize(i, 'amount', v)}
+                        placeholder="Amount (e.g. ₹5,000)"
+                        placeholderTextColor={c.muted}
+                        keyboardType="default"
+                      />
+                      <TouchableOpacity onPress={() => removePrize(i)}
+                        style={{ borderRadius: 8, borderWidth: 1, borderColor: '#ef444444',
+                          paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#ef444410' }}>
+                        <Text style={{ color: '#ef4444', fontSize: 13, fontWeight: '700' }}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </View>
+
+              {/* ── Rules ── */}
+              <View>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: c.muted,
+                  textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Rules</Text>
+                <TextInput
+                  style={{ backgroundColor: c.elevated, borderRadius: 10, borderWidth: 1, borderColor: c.border,
+                    color: c.ink, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14,
+                    minHeight: 80, textAlignVertical: 'top' }}
+                  value={infoForm.rules}
+                  onChangeText={v => setInfoForm(p => ({ ...p, rules: v }))}
+                  multiline
+                  placeholder="Tournament rules and format details…"
+                  placeholderTextColor={c.muted}
+                />
+              </View>
+
+              {/* ── Registration & Contact ── */}
+              <View>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: c.muted,
+                  textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Registration & Contact</Text>
+
+                {/* Entry fee */}
+                <Text style={{ fontSize: 12, color: c.muted, marginBottom: 4 }}>Entry Fee</Text>
+                <TextInput
+                  style={{ backgroundColor: c.elevated, borderRadius: 10, borderWidth: 1, borderColor: c.border,
+                    color: c.ink, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, marginBottom: 10 }}
+                  value={infoForm.contact.entry_fee}
+                  onChangeText={v => setContact('entry_fee', v)}
+                  placeholder="e.g. ₹200 per player"
+                  placeholderTextColor={c.muted}
+                />
+
+                {/* Reg deadline */}
+                <Text style={{ fontSize: 12, color: c.muted, marginBottom: 4 }}>Registration Deadline</Text>
+                <TextInput
+                  style={{ backgroundColor: c.elevated, borderRadius: 10, borderWidth: 1, borderColor: c.border,
+                    color: c.ink, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, marginBottom: 10 }}
+                  value={infoForm.contact.reg_deadline}
+                  onChangeText={v => setContact('reg_deadline', v)}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={c.muted}
+                />
+
+                {/* Contact persons */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Text style={{ fontSize: 12, color: c.muted }}>Contact Persons</Text>
+                  <TouchableOpacity onPress={addPerson}
+                    style={{ borderRadius: 8, borderWidth: 1.5, borderColor: c.primary,
+                      paddingHorizontal: 12, paddingVertical: 4 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: c.primary }}>+ Add</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {infoForm.contact.persons.length === 0 && (
+                  <Text style={{ fontSize: 13, color: c.muted, fontStyle: 'italic', marginBottom: 4 }}>
+                    No contact persons added.
+                  </Text>
+                )}
+
+                {infoForm.contact.persons.map((person, i) => (
+                  <View key={i} style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                    <TextInput
+                      style={{ flex: 1, backgroundColor: c.elevated, borderRadius: 8, borderWidth: 1,
+                        borderColor: c.border, color: c.ink, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13 }}
+                      value={person.name}
+                      onChangeText={v => updatePerson(i, 'name', v)}
+                      placeholder="Name"
+                      placeholderTextColor={c.muted}
+                    />
+                    <TextInput
+                      style={{ flex: 1, backgroundColor: c.elevated, borderRadius: 8, borderWidth: 1,
+                        borderColor: c.border, color: c.ink, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13 }}
+                      value={person.phone}
+                      onChangeText={v => updatePerson(i, 'phone', v)}
+                      placeholder="Phone"
+                      placeholderTextColor={c.muted}
+                      keyboardType="phone-pad"
+                    />
+                    <TouchableOpacity onPress={() => removePerson(i)}
+                      style={{ borderRadius: 8, borderWidth: 1, borderColor: '#ef444444',
+                        paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#ef444410' }}>
+                      <Text style={{ color: '#ef4444', fontSize: 13, fontWeight: '700' }}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+
+              {/* Save button */}
+              <TouchableOpacity onPress={handleSaveInfo}
+                style={{ backgroundColor: c.primary, borderRadius: 10, paddingVertical: 13, alignItems: 'center' }}>
+                <Text style={{ fontFamily: F.display, color: '#fff', fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase' }}>Save Info</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={{ gap: 12 }}>
+              {/* Overview */}
+              {!!infoForm.overview && (
+                <View>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>Overview</Text>
+                  <Text style={{ fontSize: 13, color: c.ink, lineHeight: 19 }}>{infoForm.overview}</Text>
+                </View>
+              )}
+
+              {/* Prize Pool */}
+              {infoForm.prize_pool.length > 0 && (
+                <View>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Prize Pool</Text>
+                  {infoForm.prize_pool.map((p, i) => (
+                    <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                      paddingVertical: 6, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: c.border }}>
+                      <View>
+                        <Text style={{ fontSize: 13, color: c.ink, fontWeight: '600' }}>{p.position || '—'}</Text>
+                        {!!p.category && <Text style={{ fontSize: 11, color: c.muted, marginTop: 1 }}>{p.category}</Text>}
+                      </View>
+                      {!!p.amount && (
+                        <Text style={{ fontSize: 14, color: c.primary, fontWeight: '800' }}>{p.amount}</Text>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Rules */}
+              {!!infoForm.rules && (
+                <View>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>Rules</Text>
+                  <Text style={{ fontSize: 13, color: c.ink, lineHeight: 19 }}>{infoForm.rules}</Text>
+                </View>
+              )}
+
+              {/* Registration & Contact */}
+              {(!!infoForm.contact.entry_fee || !!infoForm.contact.reg_deadline || infoForm.contact.persons.length > 0) && (
+                <View>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Registration & Contact</Text>
+                  {!!infoForm.contact.entry_fee && (
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text style={{ fontSize: 13, color: c.muted }}>Entry Fee</Text>
+                      <Text style={{ fontSize: 13, color: c.ink, fontWeight: '700' }}>{infoForm.contact.entry_fee}</Text>
+                    </View>
+                  )}
+                  {!!infoForm.contact.reg_deadline && (
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text style={{ fontSize: 13, color: c.muted }}>Deadline</Text>
+                      <Text style={{ fontSize: 13, color: c.ink, fontWeight: '700' }}>{infoForm.contact.reg_deadline}</Text>
+                    </View>
+                  )}
+                  {infoForm.contact.persons.map((p, i) => (
+                    <Text key={i} style={{ fontSize: 13, color: c.muted, marginTop: 2 }}>
+                      {p.name}{p.phone ? ` · ${p.phone}` : ''}
+                    </Text>
+                  ))}
+                </View>
+              )}
+
+              {/* Empty state */}
+              {!infoForm.overview && !infoForm.rules && infoForm.prize_pool.length === 0 &&
+               !infoForm.contact.entry_fee && !infoForm.contact.reg_deadline && infoForm.contact.persons.length === 0 && (
+                <Text style={{ color: c.muted, fontSize: 13 }}>No info added yet. Tap Edit to add details.</Text>
+              )}
+            </View>
+          )}
+        </View>
+
+        {/* Events grid */}
+        {t.is_multi_sport && (
+          <Text style={{ fontSize: 11, fontWeight: '800', color: c.muted,
+            textTransform: 'uppercase', letterSpacing: 2, marginBottom: 12 }}>Sports</Text>
+        )}
+
+        {events.length === 0 ? (
+          <View style={{ backgroundColor: c.surface, borderRadius: 14, borderWidth: 1, borderColor: c.border,
+            padding: 40, alignItems: 'center' }}>
+            <Text style={{ fontSize: 15, fontWeight: '800', color: c.ink }}>No Events Yet</Text>
+            <Text style={{ fontSize: 13, color: c.muted, marginTop: 4 }}>This tournament has no events configured.</Text>
+          </View>
+        ) : (
+          <View style={{ gap: 12 }}>
+            {events.map((ev: any) => {
+              const sm     = SPORT_META[ev.sport_key] ?? { abbrev: (ev.sport_key ?? '?').slice(0, 2).toUpperCase(), label: ev.sport_key, type: 'individual' };
+              const needs  = ev.is_configured === false;
+              return (
+                <TouchableOpacity
+                  key={ev.event_id}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    if (needs) {
+                      setSetupTarget(ev);
+                    } else {
+                      router.push(`/organiser/tournament/${id}/event/${ev.event_id}`);
+                    }
+                  }}
+                  style={{ backgroundColor: c.surface, borderRadius: 14, borderWidth: 1,
+                    borderColor: needs ? 'rgba(255,204,0,0.5)' : c.border,
+                    borderTopWidth: 3, borderTopColor: needs ? '#ffcc00' : c.primary,
+                    padding: 16 }}
+                >
+                  {needs && (
+                    <View style={{ position: 'absolute', top: 10, right: 10, backgroundColor: '#ffcc00',
+                      borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
+                      <Text style={{ fontSize: 9, fontWeight: '900', color: '#1a1a1a' }}>SETUP REQUIRED</Text>
+                    </View>
+                  )}
+
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12,
+                    paddingRight: needs ? 100 : 0 }}>
+                    <View style={{ width: 44, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: needs ? 'rgba(255,204,0,0.12)' : c.primary + '22',
+                      borderWidth: 1, borderColor: needs ? 'rgba(255,204,0,0.3)' : c.primary + '44' }}>
+                      <Text style={{ fontSize: 18, fontWeight: '900', color: needs ? '#b8860b' : c.primary }}>{sm.abbrev}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontFamily: F.display, fontSize: 12, color: c.ink, letterSpacing: -0.3 }}>{ev.name}</Text>
+                      <Text style={{ fontFamily: F.body, fontSize: 12, color: c.muted, marginTop: 2 }}>
+                        {needs ? 'Tap to configure' : `${sm.label} · ${(ev.format ?? '').replace(/_/g, ' ')}`}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Type badge */}
+                  <View style={{ alignSelf: 'flex-start', borderRadius: 999,
+                    backgroundColor: needs ? '#ffcc0022' : (sm.type === 'team' ? '#f59e0b22' : '#22c55e22'),
+                    paddingHorizontal: 10, paddingVertical: 3, marginBottom: 12 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700',
+                      color: needs ? '#b8860b' : (sm.type === 'team' ? '#f59e0b' : '#22c55e') }}>
+                      {needs ? 'Pending Setup' : (sm.type === 'team' ? 'Team Sport' : 'Individual')}
+                    </Text>
+                  </View>
+
+                  {/* Stats */}
+                  {!needs && (
+                    <View style={{ flexDirection: 'row', gap: 20, paddingTop: 12,
+                      borderTopWidth: 1, borderTopColor: c.border }}>
+                      {[
+                        { label: ev.participant_type === 'team' ? 'Teams' : 'Players', value: ev.player_count },
+                        { label: 'Matches', value: ev.match_count },
+                        { label: 'Done',    value: `${ev.done_count ?? 0}/${ev.match_count}` },
+                        ...(ev.live_count > 0 ? [{ label: 'Live', value: ev.live_count, color: c.primary }] : []),
+                      ].map(({ label, value, color }) => (
+                        <View key={label}>
+                          <Text style={{ fontSize: 20, fontWeight: '900', color: color ?? c.ink, lineHeight: 22 }}>{value}</Text>
+                          <Text style={{ fontSize: 10, color: c.muted, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  <Text style={{ marginTop: 10, textAlign: 'right', fontSize: 11, fontWeight: '800',
+                    textTransform: 'uppercase', letterSpacing: 1,
+                    color: needs ? '#b8860b' : c.primary }}>
+                    {needs ? 'Configure →' : 'Manage →'}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+      </ScrollView>
+
+      {/* Sport Setup Modal (multi-sport event configuration) */}
+      {setupTarget && (
+        <SportSetupModal
+          event={setupTarget}
+          token={token!}
+          onClose={() => setSetupTarget(null)}
+          onSetupComplete={(updated: any) => {
+            setSetupTarget(null);
+            // Re-fetch workspace so event card refreshes
+            load();
+            showFlash(`${updated.name ?? setupTarget.name} configured!`);
+          }}
+        />
+      )}
+    </SafeAreaView>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SportSetupModal — configure an unconfigured event in a multi-sport tournament
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SETUP_FORMATS = [
+  { key: 'direct_knockout', label: 'Direct Knockout',  desc: 'Single elimination bracket'   },
+  { key: 'round_robin',     label: 'Round Robin',      desc: 'Everyone plays everyone'      },
+  { key: 'group_knockout',  label: 'Group + Knockout', desc: 'Groups then elimination'      },
+];
+
+const SPORT_SETUP: Record<string, any> = {
+  table_tennis: {
+    label: 'Table Tennis', icon: '🏓',
+    subformats: [
+      { key: 'singles', label: 'Singles',  pType: 'individual',   desc: '1 vs 1 — individual players' },
+      { key: 'doubles', label: 'Doubles',  pType: 'doubles_pair', desc: '2 vs 2 — pairs compete'       },
+    ],
+    scoring: [
+      { key: 'sets_to_win',    label: 'Sets to Win',   options: [1, 2, 3],    default: 2  },
+      { key: 'points_per_set', label: 'Points per Set', options: [11, 21],    default: 11 },
+    ],
+  },
+  badminton: {
+    label: 'Badminton', icon: '🏸',
+    subformats: [
+      { key: 'singles',       label: 'Singles',       pType: 'individual',   desc: '1 vs 1' },
+      { key: 'doubles',       label: 'Doubles',       pType: 'doubles_pair', desc: '2 vs 2' },
+      { key: 'mixed_doubles', label: 'Mixed Doubles', pType: 'doubles_pair', desc: '2 vs 2 mixed' },
+    ],
+    scoring: [
+      { key: 'sets_to_win',    label: 'Sets to Win',   options: [1, 2, 3],      default: 2  },
+      { key: 'points_per_set', label: 'Points per Set', options: [11, 15, 21],  default: 21 },
+    ],
+  },
+  cricket: {
+    label: 'Cricket', icon: '🏏',
+    subformats: null,  // always team vs team
+    teamConfig: [
+      { key: 'squad_size', label: 'Squad Size',        options: [6, 7, 9, 11, 15], default: 11 },
+      { key: 'overs',      label: 'Overs per Innings', options: [5, 10, 15, 20, 25, 30, 40, 50], default: 20 },
+    ],
+    scoring: [],
+  },
+  football: {
+    label: 'Football', icon: '⚽',
+    subformats: null,  // always team vs team
+    teamFormats: [
+      { key: '5_a_side',  label: '5-a-side',  team_size: 5,  subs_default: 2 },
+      { key: '7_a_side',  label: '7-a-side',  team_size: 7,  subs_default: 3 },
+      { key: '11_a_side', label: '11-a-side', team_size: 11, subs_default: 5 },
+    ],
+    scoring: [],
+  },
+};
+
+interface SportSetupModalProps {
+  event:           any;
+  token:           string;
+  onClose:         () => void;
+  onSetupComplete: (updated: any) => void;
+}
+
+function SportSetupModal({ event, token, onClose, onSetupComplete }: SportSetupModalProps) {
+  const { theme }  = useTheme();
+  const c          = theme.colors;
+  const spec       = SPORT_SETUP[event?.sport_key] ?? null;
+
+  // ── Form state ──────────────────────────────────────────────────────────
+  const [subformat,   setSubformat]   = useState<string>(spec?.subformats?.[0]?.key ?? '');
+  const [format,      setFormat]      = useState('');
+  const [scoring,     setScoring]     = useState<Record<string, number>>(() => {
+    const s: Record<string, number> = {};
+    (spec?.scoring ?? []).forEach((f: any) => { s[f.key] = f.default; });
+    return s;
+  });
+  const [teamConfig,  setTeamConfig]  = useState<Record<string, any>>(() => {
+    const t: Record<string, any> = {};
+    (spec?.teamConfig ?? []).forEach((f: any) => { t[f.key] = f.default; });
+    if (spec?.teamFormats) t.team_format = spec.teamFormats[2].key; // 11-a-side default
+    return t;
+  });
+  const [subs,        setSubs]        = useState(
+    spec?.teamFormats?.[2]?.subs_default ?? 5
+  );
+  const [showScoring, setShowScoring] = useState(false);
+  const [loading,     setLoading]     = useState(false);
+  const [error,       setError]       = useState('');
+
+  const selectedSubformat = spec?.subformats?.find((sf: any) => sf.key === subformat);
+  const participantType   = selectedSubformat ? selectedSubformat.pType : 'team';
+
+  const sportLabel = spec?.label ?? event?.name ?? event?.sport_key;
+  const sportIcon  = spec?.icon  ?? '🏅';
+
+  // ── Submit ───────────────────────────────────────────────────────────────
+  const handleSave = async () => {
+    if (!format) { setError('Please select a tournament format'); return; }
+    setLoading(true); setError('');
+    try {
+      const payload: any = {
+        format,
+        participant_type: participantType,
+        sport_config:     { ...scoring },
+      };
+
+      if (event.sport_key === 'cricket') {
+        const squadSize   = parseInt(String(teamConfig.squad_size ?? 11));
+        const overs       = parseInt(String(teamConfig.overs ?? 20));
+        payload.squad_size   = squadSize;
+        payload.sport_config = { overs, wickets: squadSize - 1 };
+      }
+
+      if (event.sport_key === 'football') {
+        const tf          = spec.teamFormats?.find((f: any) => f.key === teamConfig.team_format) ?? spec.teamFormats?.[2];
+        payload.team_size   = tf?.team_size ?? 11;
+        payload.substitutes = subs;
+      }
+
+      const updated = await apiConfigureEvent(token, event.event_id, payload);
+      onSetupComplete(updated);
+    } catch (e: any) {
+      setError(e.message || 'Failed to save configuration');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Render ───────────────────────────────────────────────────────────────
+  return (
+    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }}>
+        <View style={{ backgroundColor: c.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+          maxHeight: '92%', paddingBottom: 32 }}>
+
+          {/* Header */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+            padding: 20, borderBottomWidth: 1, borderBottomColor: c.border }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: c.primary + '22',
+                borderWidth: 1, borderColor: c.primary + '44', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 24 }}>{sportIcon}</Text>
+              </View>
+              <View>
+                <Text style={{ fontSize: 9, fontWeight: '800', textTransform: 'uppercase',
+                  letterSpacing: 2, color: c.primary, marginBottom: 2 }}>Sport Setup</Text>
+                <Text style={{ fontFamily: F.display, fontSize: 16, color: c.ink, letterSpacing: -0.3 }}>
+                  {event.name ?? sportLabel}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Text style={{ fontSize: 24, color: c.muted, lineHeight: 28 }}>×</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 8 }}>
+
+            {/* Error */}
+            {!!error && (
+              <View style={{ backgroundColor: '#ef444415', borderRadius: 8, borderWidth: 1,
+                borderColor: '#ef444433', padding: 12, marginBottom: 16 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#ef4444' }}>{error}</Text>
+              </View>
+            )}
+
+            {/* ── Participant format (TT / Badminton) ─────────────────── */}
+            {spec?.subformats && (
+              <View style={{ marginBottom: 20 }}>
+                <Text style={[sm.sectionLabel, { color: c.primary }]}>Participant Format</Text>
+                <View style={{ gap: 8 }}>
+                  {spec.subformats.map((sf: any) => (
+                    <TouchableOpacity key={sf.key}
+                      onPress={() => setSubformat(sf.key)}
+                      style={[sm.optRow, {
+                        borderColor: subformat === sf.key ? c.primary : c.border,
+                        backgroundColor: subformat === sf.key ? c.primary + '0d' : c.elevated,
+                      }]}
+                    >
+                      <View style={{ width: 36, height: 36, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
+                        backgroundColor: subformat === sf.key ? c.primary + '22' : c.surface }}>
+                        <Text style={{ fontSize: 11, fontWeight: '900',
+                          color: subformat === sf.key ? c.primary : c.muted }}>
+                          {sf.key === 'singles' ? '1v1' : sf.key === 'doubles' ? '2v2' : 'MIX'}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontWeight: '700', fontSize: 14, color: c.ink }}>{sf.label}</Text>
+                        <Text style={{ fontSize: 12, color: c.muted, marginTop: 1 }}>{sf.desc}</Text>
+                      </View>
+                      {subformat === sf.key && (
+                        <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: c.primary,
+                          alignItems: 'center', justifyContent: 'center' }}>
+                          <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900' }}>✓</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* ── Team config: Cricket ─────────────────────────────────── */}
+            {event.sport_key === 'cricket' && spec?.teamConfig && (
+              <View style={{ marginBottom: 20 }}>
+                <Text style={[sm.sectionLabel, { color: c.primary }]}>Team Setup</Text>
+                {spec.teamConfig.map((field: any) => (
+                  <View key={field.key} style={{ marginBottom: 12 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: c.muted, marginBottom: 8 }}>{field.label}</Text>
+                    <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                      {field.options.map((o: number) => (
+                        <TouchableOpacity key={o} onPress={() => setTeamConfig(p => ({ ...p, [field.key]: o }))}
+                          style={[sm.pill, {
+                            backgroundColor: teamConfig[field.key] === o ? c.ink : c.elevated,
+                            borderColor: teamConfig[field.key] === o ? c.ink : c.border,
+                          }]}>
+                          <Text style={{ fontWeight: '700', fontSize: 13,
+                            color: teamConfig[field.key] === o ? c.bg : c.muted }}>{o}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* ── Team config: Football ────────────────────────────────── */}
+            {event.sport_key === 'football' && spec?.teamFormats && (
+              <View style={{ marginBottom: 20 }}>
+                <Text style={[sm.sectionLabel, { color: c.primary }]}>Team Format</Text>
+                <View style={{ gap: 8, marginBottom: 16 }}>
+                  {spec.teamFormats.map((tf: any) => (
+                    <TouchableOpacity key={tf.key}
+                      onPress={() => { setTeamConfig(p => ({ ...p, team_format: tf.key })); setSubs(tf.subs_default); }}
+                      style={[sm.optRow, {
+                        borderColor: teamConfig.team_format === tf.key ? c.primary : c.border,
+                        backgroundColor: teamConfig.team_format === tf.key ? c.primary + '0d' : c.elevated,
+                      }]}
+                    >
+                      <Text style={{ fontWeight: '700', fontSize: 14, flex: 1, color: c.ink }}>{tf.label}</Text>
+                      {teamConfig.team_format === tf.key && (
+                        <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: c.primary,
+                          alignItems: 'center', justifyContent: 'center' }}>
+                          <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900' }}>✓</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {/* Substitutes */}
+                <Text style={{ fontSize: 12, fontWeight: '700', color: c.muted, marginBottom: 8 }}>
+                  Substitutes on Bench
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                  {[0, 1, 2, 3, 4, 5, 6, 7].map(n => (
+                    <TouchableOpacity key={n} onPress={() => setSubs(n)}
+                      style={[sm.pill, {
+                        backgroundColor: subs === n ? c.ink : c.elevated,
+                        borderColor: subs === n ? c.ink : c.border,
+                      }]}>
+                      <Text style={{ fontWeight: '700', fontSize: 13,
+                        color: subs === n ? c.bg : c.muted }}>{n}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* ── Tournament format ────────────────────────────────────── */}
+            <View style={{ marginBottom: 20 }}>
+              <Text style={[sm.sectionLabel, { color: c.primary }]}>Tournament Format</Text>
+              <View style={{ gap: 8 }}>
+                {SETUP_FORMATS.map(f => (
+                  <TouchableOpacity key={f.key}
+                    onPress={() => setFormat(f.key)}
+                    style={[sm.optRow, {
+                      borderColor: format === f.key ? c.primary : c.border,
+                      backgroundColor: format === f.key ? c.primary + '0d' : c.elevated,
+                    }]}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontWeight: '700', fontSize: 14, color: c.ink }}>{f.label}</Text>
+                      <Text style={{ fontSize: 12, color: c.muted, marginTop: 1 }}>{f.desc}</Text>
+                    </View>
+                    {format === f.key && (
+                      <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: c.primary,
+                        alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900' }}>✓</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* ── Scoring rules (collapsible) ──────────────────────────── */}
+            {spec?.scoring?.length > 0 && (
+              <View style={{ borderTopWidth: 1, borderTopColor: c.border, paddingTop: 16, marginBottom: 20 }}>
+                <TouchableOpacity onPress={() => setShowScoring(v => !v)}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: showScoring ? 14 : 0 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', textTransform: 'uppercase',
+                    letterSpacing: 1, color: c.muted }}>
+                    Scoring Rules (optional)
+                  </Text>
+                  <Text style={{ fontSize: 12, color: c.muted }}>{showScoring ? '▲ Hide' : '▼ Show'}</Text>
+                </TouchableOpacity>
+                {showScoring && (
+                  <View style={{ backgroundColor: c.bg, borderRadius: 10, padding: 14, gap: 14 }}>
+                    {spec.scoring.map((field: any) => (
+                      <View key={field.key}>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: c.muted, marginBottom: 8 }}>
+                          {field.label}
+                        </Text>
+                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                          {field.options.map((o: number) => (
+                            <TouchableOpacity key={o}
+                              onPress={() => setScoring(p => ({ ...p, [field.key]: o }))}
+                              style={[sm.pill, {
+                                backgroundColor: scoring[field.key] === o ? c.ink : c.elevated,
+                                borderColor: scoring[field.key] === o ? c.ink : c.border,
+                              }]}>
+                              <Text style={{ fontWeight: '700', fontSize: 13,
+                                color: scoring[field.key] === o ? c.bg : c.muted }}>{o}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* ── Action buttons ───────────────────────────────────────── */}
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity onPress={onClose}
+                style={{ flex: 1, borderRadius: 8, borderWidth: 1.5, borderColor: c.border,
+                  paddingVertical: 13, alignItems: 'center' }}>
+                <Text style={{ fontWeight: '700', fontSize: 14, color: c.muted }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleSave} disabled={loading || !format}
+                style={{ flex: 2, borderRadius: 8, backgroundColor: c.primary,
+                  paddingVertical: 13, alignItems: 'center',
+                  opacity: loading || !format ? 0.5 : 1 }}>
+                {loading
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={{ fontFamily: F.display, color: '#fff', fontSize: 11,
+                      fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      Save Setup →
+                    </Text>
+                }
+              </TouchableOpacity>
+            </View>
+
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const sm = StyleSheet.create({
+  sectionLabel: {
+    fontSize: 10, fontWeight: '800', textTransform: 'uppercase',
+    letterSpacing: 2, marginBottom: 10,
+  },
+  optRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderRadius: 10, borderWidth: 1.5, padding: 12,
+  },
+  pill: {
+    borderRadius: 6, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 8,
+    minWidth: 44, alignItems: 'center',
+  },
+});
