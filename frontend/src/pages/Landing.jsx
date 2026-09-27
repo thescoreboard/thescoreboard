@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { getHomepageData, isLoggedIn, getMode, saveIntent } from "../api/client";
+import { getHomepageData, isLoggedIn } from "../api/client";
 import TournamentCard, { SPORT_LABELS } from "../components/shared/TournamentCard";
 import SiteFooter from "../components/shared/SiteFooter";
 
@@ -9,30 +9,6 @@ const SPORTS_CONFIG = [
   { key: "cricket",      url: "cricket",       color: "#D97706", icon: "🏏" },
   { key: "table_tennis", url: "table-tennis",  color: "#FF6B35", icon: "🏓" },
   { key: "badminton",    url: "badminton",     color: "#38bdf8", icon: "🏸" },
-  { key: "throw_ball",   url: "throw-ball",    color: "#ec4899", icon: "🤾" },
-  { key: "tug_of_war",   url: "tug-of-war",    color: "#a855f7", icon: "🪢" },
-];
-
-
-const STEPS = [
-  {
-    num: "01",
-    title: "Find Your Tournament",
-    desc: "Browse local tournaments by sport, city, or skill level. From grassroots leagues to competitive championships.",
-    color: "#FF6B35",
-  },
-  {
-    num: "02",
-    title: "Register & Play",
-    desc: "Sign up in seconds, get your bracket placement, and receive live notifications as the competition unfolds.",
-    color: "#22c55e",
-  },
-  {
-    num: "03",
-    title: "Track Your Progress",
-    desc: "Follow live scores, see your stats, climb the rankings, and share your journey with your community.",
-    color: "#38bdf8",
-  },
 ];
 
 
@@ -49,7 +25,6 @@ export default function Landing() {
   const [data,  setData]  = useState(null);
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
   const fetchingRef   = useRef(false);
-  const howItWorksRef = useRef(null);
   const sportsRef     = useRef(null);
 
   const fetchData = useCallback(async () => {
@@ -83,13 +58,6 @@ export default function Landing() {
   };
 
   const scrollTo = (ref) => ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-
-  // Support /#how-it-works deep link (used by the shared footer on other pages)
-  useEffect(() => {
-    if (window.location.hash === "#how-it-works") {
-      setTimeout(() => howItWorksRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
-    }
-  }, []);
 
   const sports     = data?.sports || [];
   const trending   = data?.trending || [];
@@ -153,14 +121,6 @@ export default function Landing() {
             >
               Sports
             </button>
-            <button
-              style={navLinkStyle}
-              onClick={() => scrollTo(howItWorksRef)}
-              onMouseEnter={e => e.currentTarget.style.color = "var(--primary)"}
-              onMouseLeave={e => e.currentTarget.style.color = "var(--muted)"}
-            >
-              How It Works
-            </button>
             <Link
               to="/about"
               style={navLinkStyle}
@@ -203,7 +163,7 @@ export default function Landing() {
             {loggedIn ? (
               /* Logged in — go to their current-mode dashboard */
               <button
-                onClick={() => navigate(getMode() === "organiser" ? "/organiser" : "/player")}
+                onClick={() => navigate("/organiser")}
                 className="landing-cta-btn"
                 onMouseEnter={e => { e.currentTarget.style.opacity = "0.85"; }}
                 onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
@@ -272,7 +232,7 @@ export default function Landing() {
             marginBottom: 40, maxWidth: 620,
             animation: "fadeUp 0.4s ease 0.2s both",
           }}>
-            Find local tournaments, register to compete, and follow live scores — all in one place. Built for grassroots sports communities.
+            Create tournaments, run live scoring, and let everyone follow along — all in one place. Built for grassroots sports communities.
           </p>
 
           <div style={{
@@ -295,8 +255,7 @@ export default function Landing() {
               Find Tournaments →
             </Link>
             <Link
-              to={loggedIn ? (getMode() === "organiser" ? "/organiser" : "/player") : "/register"}
-              onClick={() => { if (!loggedIn) saveIntent("player"); }}
+              to={loggedIn ? "/organiser" : "/register"}
               style={{
                 background: "none", color: "var(--ink)",
                 border: "2px solid var(--border)", borderRadius: 9, padding: "12px 28px",
@@ -416,87 +375,6 @@ export default function Landing() {
         </section>
       )}
 
-      {/* ── HOW IT WORKS ────────────────────────────────────── */}
-      <section ref={howItWorksRef} style={{
-        padding: "72px 24px",
-        background: "var(--bg)",
-        borderTop: "2px solid var(--border)",
-      }} className="landing-section-pad">
-        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ textAlign: "center", marginBottom: 56 }}>
-            <div style={{
-              fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800,
-              textTransform: "uppercase", letterSpacing: 3,
-              color: "var(--primary-text)", marginBottom: 12,
-            }}>
-              How It Works
-            </div>
-            <h2 style={{
-              fontFamily: "var(--font-display)", fontSize: "clamp(26px,3.5vw,42px)",
-              fontWeight: 900, letterSpacing: -1.5, color: "var(--ink)", lineHeight: 1.1,
-            }}>
-              Get on the field in three steps
-            </h2>
-          </div>
-
-          <div style={{ display: "grid", gap: 20 }} className="steps-grid">
-            {STEPS.map(step => (
-              <div
-                key={step.num}
-                className="steps-card"
-                style={{
-                  padding: "32px 28px", borderRadius: 16,
-                  border: "1.5px solid var(--border)",
-                  background: "var(--surface)",
-                  position: "relative", overflow: "hidden",
-                  transition: "all 0.3s",
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.borderColor = step.color + "65";
-                  e.currentTarget.style.boxShadow = `0 8px 32px ${step.color}15`;
-                  e.currentTarget.style.transform = "translateY(-4px)";
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.borderColor = "var(--border)";
-                  e.currentTarget.style.boxShadow = "none";
-                  e.currentTarget.style.transform = "none";
-                }}
-              >
-                {/* Watermark number */}
-                <div style={{
-                  position: "absolute", top: -10, right: 16,
-                  fontFamily: "var(--font-display)", fontSize: 88, fontWeight: 900,
-                  color: step.color, opacity: 0.06, lineHeight: 1, pointerEvents: "none",
-                  userSelect: "none",
-                }}>
-                  {step.num}
-                </div>
-
-                <div style={{
-                  width: 44, height: 44, borderRadius: 11,
-                  background: step.color + "18",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  marginBottom: 20,
-                  fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 900,
-                  color: step.color, flexShrink: 0,
-                }}>
-                  {step.num}
-                </div>
-                <h3 style={{
-                  fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 900,
-                  color: "var(--ink)", letterSpacing: -0.5, marginBottom: 12,
-                }}>
-                  {step.title}
-                </h3>
-                <p style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.75, margin: 0 }}>
-                  {step.desc}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ── DUAL CTA ────────────────────────────────────────── */}
       <section style={{
         padding: "72px 24px",
@@ -504,79 +382,20 @@ export default function Landing() {
         borderTop: "2px solid var(--border)",
       }} className="landing-section-pad">
         <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ display: "grid", gap: 20 }} className="dual-cta-grid">
+          {/* For Organisers — full-width dark banner: pitch + CTA on the left, features on the right */}
+          <div className="organiser-cta" style={{
+            borderRadius: 20, padding: "56px 56px",
+            background: "linear-gradient(135deg, #150800 0%, #2a1000 100%)",
+            position: "relative", overflow: "hidden",
+          }}>
+            <div style={{
+              position: "absolute", top: -80, right: -60,
+              width: 360, height: 360, borderRadius: "50%",
+              background: "radial-gradient(circle, rgba(255,107,53,0.18) 0%, transparent 70%)",
+              pointerEvents: "none",
+            }}/>
 
-            {/* For Players — always dark card */}
-            <div className="dual-cta-card" style={{
-              padding: "48px 40px", borderRadius: 16,
-              background: "linear-gradient(135deg, #0c0c1a 0%, #141428 100%)",
-              position: "relative", overflow: "hidden",
-            }}>
-              <div style={{
-                position: "absolute", top: -40, right: -40,
-                width: 220, height: 220, borderRadius: "50%",
-                background: "radial-gradient(circle, rgba(56,189,248,0.14) 0%, transparent 70%)",
-                pointerEvents: "none",
-              }}/>
-              <div style={{
-                fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800,
-                textTransform: "uppercase", letterSpacing: 3,
-                color: "#38bdf8", marginBottom: 16,
-              }}>
-                For Players
-              </div>
-              <h3 style={{
-                fontFamily: "var(--font-display)", fontSize: "clamp(22px,2.5vw,30px)",
-                fontWeight: 900, letterSpacing: -1, color: "#fff",
-                lineHeight: 1.15, marginBottom: 16,
-              }}>
-                Compete in tournaments near you
-              </h3>
-              <p style={{ fontSize: 14, color: "rgba(255,255,255,0.5)", lineHeight: 1.75, marginBottom: 28 }}>
-                Browse by sport and location, register in seconds, track your stats, and follow live scores from anywhere.
-              </p>
-              <ul style={{
-                listStyle: "none", padding: 0, margin: "0 0 32px",
-                display: "flex", flexDirection: "column", gap: 9,
-              }}>
-                {["Find tournaments by sport & city", "Register to play in minutes", "Follow your live scores", "Track stats & tournament history"].map(item => (
-                  <li key={item} style={{
-                    fontSize: 13, color: "rgba(255,255,255,0.65)",
-                    display: "flex", alignItems: "center", gap: 9,
-                  }}>
-                    <span style={{ color: "#38bdf8", fontWeight: 900, fontSize: 15, lineHeight: 1 }}>✓</span>
-                    {item}
-                  </li>
-                ))}
-              </ul>
-              <button
-                onClick={() => navigate("/tournaments")}
-                style={{
-                  background: "#38bdf8", color: "#0c0c1a",
-                  border: "none", borderRadius: 9, padding: "12px 28px",
-                  fontFamily: "var(--font-display)", fontSize: 11, fontWeight: 900,
-                  textTransform: "uppercase", letterSpacing: 0.5, cursor: "pointer",
-                  transition: "all 0.2s",
-                }}
-                onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 6px 20px rgba(56,189,248,0.4)"; }}
-                onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}
-              >
-                Find Tournaments →
-              </button>
-            </div>
-
-            {/* For Organisers — always dark card */}
-            <div className="dual-cta-card" style={{
-              padding: "48px 40px", borderRadius: 16,
-              background: "linear-gradient(135deg, #150800 0%, #2a1000 100%)",
-              position: "relative", overflow: "hidden",
-            }}>
-              <div style={{
-                position: "absolute", top: -40, right: -40,
-                width: 220, height: 220, borderRadius: "50%",
-                background: "radial-gradient(circle, rgba(255,107,53,0.16) 0%, transparent 70%)",
-                pointerEvents: "none",
-              }}/>
+            <div style={{ position: "relative" }}>
               <div style={{
                 fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800,
                 textTransform: "uppercase", letterSpacing: 3,
@@ -585,37 +404,23 @@ export default function Landing() {
                 For Organisers
               </div>
               <h3 style={{
-                fontFamily: "var(--font-display)", fontSize: "clamp(22px,2.5vw,30px)",
+                fontFamily: "var(--font-display)", fontSize: "clamp(26px,3.2vw,40px)",
                 fontWeight: 900, letterSpacing: -1, color: "#fff",
-                lineHeight: 1.15, marginBottom: 16,
+                lineHeight: 1.1, margin: "0 0 16px",
               }}>
                 Run tournaments like a pro
               </h3>
-              <p style={{ fontSize: 14, color: "rgba(255,255,255,0.5)", lineHeight: 1.75, marginBottom: 28 }}>
+              <p style={{ fontSize: 15, color: "rgba(255,255,255,0.55)", lineHeight: 1.7, margin: "0 0 32px", maxWidth: 460 }}>
                 Create and manage tournaments from your phone or desktop. Auto-generate brackets, track scores live, and publish results instantly.
               </p>
-              <ul style={{
-                listStyle: "none", padding: 0, margin: "0 0 32px",
-                display: "flex", flexDirection: "column", gap: 9,
-              }}>
-                {["Auto-generate brackets & fixtures", "Live score management", "Publish results instantly", "Sponsor & media management"].map(item => (
-                  <li key={item} style={{
-                    fontSize: 13, color: "rgba(255,255,255,0.65)",
-                    display: "flex", alignItems: "center", gap: 9,
-                  }}>
-                    <span style={{ color: "#FF6B35", fontWeight: 900, fontSize: 15, lineHeight: 1 }}>✓</span>
-                    {item}
-                  </li>
-                ))}
-              </ul>
               <button
-                onClick={() => { if (!loggedIn) saveIntent("organiser"); navigate(loggedIn ? "/organiser" : "/register"); }}
+                onClick={() => navigate(loggedIn ? "/organiser" : "/register")}
                 style={{
                   background: "#FF6B35", color: "#fff",
-                  border: "none", borderRadius: 9, padding: "12px 28px",
-                  fontFamily: "var(--font-display)", fontSize: 11, fontWeight: 900,
+                  border: "none", borderRadius: 10, padding: "14px 32px",
+                  fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 900,
                   textTransform: "uppercase", letterSpacing: 0.5, cursor: "pointer",
-                  transition: "all 0.2s",
+                  transition: "all 0.2s", whiteSpace: "nowrap",
                 }}
                 onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 6px 20px rgba(255,107,53,0.4)"; }}
                 onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}
@@ -623,6 +428,29 @@ export default function Landing() {
                 {loggedIn ? "Organiser Dashboard →" : "Start Organising →"}
               </button>
             </div>
+
+            <ul className="organiser-cta-features" style={{
+              listStyle: "none", padding: 0, margin: 0, position: "relative",
+              display: "grid", gap: 12,
+            }}>
+              {["Auto-generate brackets & fixtures", "Live score management", "Publish results instantly", "Sponsor & media management"].map(item => (
+                <li key={item} style={{
+                  fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,0.85)",
+                  display: "flex", alignItems: "center", gap: 12,
+                  padding: "18px 18px", borderRadius: 12,
+                  background: "rgba(255,255,255,0.05)",
+                  border: "1px solid rgba(255,255,255,0.09)",
+                }}>
+                  <span style={{
+                    flexShrink: 0, width: 26, height: 26, borderRadius: "50%",
+                    background: "rgba(255,107,53,0.18)", color: "#FF6B35",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontWeight: 900, fontSize: 13,
+                  }}>✓</span>
+                  {item}
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
       </section>
@@ -736,12 +564,12 @@ export default function Landing() {
       </main>
 
       {/* ── FOOTER ──────────────────────────────────────────── */}
-      <SiteFooter onHowItWorks={() => scrollTo(howItWorksRef)} />
+      <SiteFooter />
 
       {/* ── FAB (mobile only, logged-in users only) ─────────── */}
       {loggedIn && (
         <button
-          onClick={() => navigate(getMode() === "organiser" ? "/organiser" : "/player")}
+          onClick={() => navigate("/organiser")}
           style={{
             position: "fixed", bottom: 24, right: 20, zIndex: 100,
             display: "flex", alignItems: "center", gap: 8,

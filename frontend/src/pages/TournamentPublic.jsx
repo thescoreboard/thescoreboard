@@ -32,8 +32,6 @@ const SPORT_META = {
   badminton:    { icon: "🏸", label: "Badminton"    },
   cricket:      { icon: "🏏", label: "Cricket"      },
   football:     { icon: "⚽", label: "Football"     },
-  throw_ball:   { icon: "🤾", label: "Throw Ball"   },
-  tug_of_war:   { icon: "🪢", label: "Tug of War"   },
 };
 const sa = k => SPORT_META[k]?.icon || "🏆";
 const sl = k => SPORT_META[k]?.label  || k;
@@ -58,13 +56,6 @@ async function apiPost(path, body) {
 const registerIndividual = (tId, p) => apiPost(`/public/tournaments/${tId}/register`, p);
 const registerPair       = (tId, p) => apiPost(`/public/tournaments/${tId}/register-team`, p);
 const registerTeam       = (tId, p) => apiPost(`/public/tournaments/${tId}/register-team`, p);
-
-// ── Status config ─────────────────────────────────────────────
-const STATUS_CFG = {
-  draft:     { label: "Coming Soon", color: "var(--muted)"   },
-  live:      { label: "Live Now",    color: "var(--primary)" },
-  completed: { label: "Completed",   color: "var(--muted)"   },
-};
 
 // ── Compute standings from match data ────────────────────────
 // Builds one standings row-set per raw match list (see computeStandings below
@@ -425,8 +416,6 @@ const SPORT_ACCENT_CFG = {
   football:     { accent:"#2563eb", rgb:"37,99,235"   },
   badminton:    { accent:"#7c3aed", rgb:"124,58,237"  },
   table_tennis: { accent:"#0891b2", rgb:"8,145,178"   },
-  throw_ball:   { accent:"#ec4899", rgb:"236,72,153"  },
-  tug_of_war:   { accent:"#a855f7", rgb:"168,85,247"  },
 };
 // Per-sport colors used inline (for multi-event pages)
 const SPORT_ACCENT = {
@@ -434,8 +423,6 @@ const SPORT_ACCENT = {
   football:     { color:"#2563eb", dim:"rgba(37,99,235,0.12)"   },
   badminton:    { color:"#7c3aed", dim:"rgba(124,58,237,0.12)"  },
   table_tennis: { color:"#0891b2", dim:"rgba(8,145,178,0.12)"   },
-  throw_ball:   { color:"#ec4899", dim:"rgba(236,72,153,0.12)"  },
-  tug_of_war:   { color:"#a855f7", dim:"rgba(168,85,247,0.12)"  },
 };
 const sAccent = (key) => SPORT_ACCENT[key] || { color:"var(--primary)", dim:"var(--primary-dim)" };
 
@@ -625,10 +612,8 @@ function FootballCard({ m, sponsorFooter }) {
   const phaseLabel = (() => {
     if (!fbHalf) return null;
     if (fbHalf >= 5) return "Penalties";
-    if (fbHalf === 4) return "ET 2nd";
-    if (fbHalf === 3) return "ET 1st";
-    if (fbHalf === 2) return "2nd Half";
-    return "1st Half";
+    if (fbHalf >= 3) return "Extra Time";
+    return null;
   })();
 
   const score1 = m.player_1?.score ?? 0;
@@ -802,110 +787,6 @@ function CardSponsorFooter({ sponsor }) {
   );
 }
 
-// ── Tournament Info & Rules display ───────────────────────────
-const MONTHS_FULL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-function formatDeadline(iso) {
-  if (!iso) return "";
-  const [y, m, d] = iso.split("-").map(Number);
-  return `${MONTHS_FULL[m - 1]} ${d}, ${y}`;
-}
-
-function TournamentInfoDisplay({ info, twoCol = false }) {
-  if (!info) return null;
-
-  // Entry fee / register-by-date / contact persons all live in the hero band
-  // now (single source of truth: Payment Collection's amount + the Info
-  // editor's contact block) — this card no longer repeats them.
-  const hasOverview = !!info.overview?.trim();
-  const hasPrizes   = info.prize_pool?.length > 0;
-  const hasRules    = !!info.rules?.trim();
-
-  if (!hasOverview && !hasPrizes && !hasRules) return null;
-
-  const sectionHead = {
-    fontSize: 10, fontWeight: 800, textTransform: "uppercase",
-    letterSpacing: 1.5, color: "var(--muted)", marginBottom: 10,
-  };
-  const card = {
-    background: "var(--surface)", border: "1.5px solid var(--border)",
-    borderRadius: 12, padding: "20px 22px",
-  };
-
-  // Render text preserving intentional line breaks cleanly
-  const renderText = (text) => (
-    <div style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>
-      {text.trim()}
-    </div>
-  );
-
-  return (
-    <div>
-      <div style={{
-        display: twoCol ? "grid" : "flex",
-        gridTemplateColumns: twoCol ? "1fr 1fr" : undefined,
-        flexDirection: twoCol ? undefined : "column",
-        gap: 16,
-        alignItems: twoCol ? "start" : "stretch",
-      }}>
-
-        {/* Prize Pool — top priority */}
-        {hasPrizes && (
-          <div style={card}>
-            <div style={sectionHead}>🏆 Prize Pool</div>
-            {/* Group by category */}
-            {(() => {
-              const categories = [...new Set(info.prize_pool.map(p => p.category || ""))];
-              return categories.map(cat => (
-                <div key={cat || "_"} style={{ marginBottom: categories.length > 1 ? 14 : 0 }}>
-                  {cat && (
-                    <div style={{ fontSize: 11, fontWeight: 800, color: "var(--primary, #FF6B35)",
-                      textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
-                      {cat}
-                    </div>
-                  )}
-                  {info.prize_pool.filter(p => (p.category || "") === cat).map((prize, i) => (
-                    <div key={i} style={{
-                      display: "flex", justifyContent: "space-between", alignItems: "center",
-                      padding: "7px 0",
-                      borderBottom: i < info.prize_pool.filter(p => (p.category || "") === cat).length - 1
-                        ? "1px solid var(--border)" : "none",
-                    }}>
-                      <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 600 }}>
-                        {prize.position}
-                      </span>
-                      <span style={{ fontSize: 14, fontWeight: 800, color: "var(--ink)",
-                        fontFamily: "var(--font-display)" }}>
-                        {prize.amount}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ));
-            })()}
-          </div>
-        )}
-
-        {/* Overview */}
-        {hasOverview && (
-          <div style={card}>
-            <div style={sectionHead}>📋 Overview</div>
-            {renderText(info.overview)}
-          </div>
-        )}
-
-        {/* Rules */}
-        {hasRules && (
-          <div style={card}>
-            <div style={sectionHead}>📏 Rules & Regulations</div>
-            {renderText(info.rules)}
-          </div>
-        )}
-
-      </div>
-    </div>
-  );
-}
-
 // ── Tiered sponsor display wall ───────────────────────────────
 const TIER_ORDER = ["title", "gold", "silver", "bronze", "partner"];
 
@@ -1040,10 +921,8 @@ function MatchDetailModal({ match: m, onClose }) {
       if (isDone)                 return "Full Time";
       if (!isLive)                return null;
       if (fbHalf >= 5) return "Penalties";
-      if (fbHalf === 4) return "ET 2nd Half";
-      if (fbHalf === 3) return "ET 1st Half";
-      if (fbHalf === 2) return "2nd Half";
-      return "1st Half";
+      if (fbHalf >= 3) return "Extra Time";
+      return "Live";
     }
     return isDone ? "Full Time" : isLive ? "Live" : null;
   })();
@@ -1510,17 +1389,10 @@ function TickerBar({ allMatches }) {
 }
 
 // ── Hero Band (broadcast-style dark hero) ─────────────────────
-function HeroBand({ tournament, totalPlayers, doneMatches, totalMatches, sportKey, onRegister, events, slug }) {
+function HeroBand({ tournament, totalPlayers, doneMatches, totalMatches, sportKey, events, slug }) {
   const sportEmoji = sa(sportKey);
   const sportLabel = sl(sportKey);
 
-  const fmtDate = (d) => {
-    if (!d) return null;
-    const [y, m, day] = d.split("-");
-    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    return `${parseInt(day, 10)} ${months[parseInt(m, 10) - 1]} ${y}`;
-  };
-  const dateStr     = fmtDate(tournament.start_date);
   const locationStr = [tournament.city, tournament.state].filter(Boolean).join(", ") || null;
   const teamCount   = events.reduce((n, ev) => n + (ev.participants || []).length, 0);
 
@@ -1531,13 +1403,6 @@ function HeroBand({ tournament, totalPlayers, doneMatches, totalMatches, sportKe
   const orgInitials = tournament.org_name
     ? tournament.org_name.trim().split(/\s+/).slice(0, 2).map(w => w[0] || "").join("").toUpperCase()
     : null;
-
-  // Entry fee / register-by / contact — from Payment Collection + the Info editor's contact block.
-  // Both are optional and shown only when the organiser has actually set them.
-  const contactInfo  = tournament.tournament_info?.contact || {};
-  const regDeadline  = contactInfo.reg_deadline ? formatDeadline(contactInfo.reg_deadline) : null;
-  const contacts     = contactInfo.persons || [];
-  const hasStatsBar  = !!(tournament.payment_amount || regDeadline || contacts.length > 0);
 
   // Team abbreviation helper
   const teamAbbr = (name) => {
@@ -1598,15 +1463,8 @@ function HeroBand({ tournament, totalPlayers, doneMatches, totalMatches, sportKe
             </p>
           )}
 
-          {/* Date + location */}
+          {/* Location */}
           <div style={{ display:"flex", gap:20, color: tournament.poster_url ? "rgba(255,255,255,.5)" : "var(--muted)", fontSize:13, flexWrap:"wrap", alignItems:"center" }}>
-            {dateStr && (
-              <span style={{ display:"flex", alignItems:"center", gap:5 }}>
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                {dateStr}
-              </span>
-            )}
-            {dateStr && locationStr && <span style={{ opacity:.35 }}>·</span>}
             {locationStr && (
               <span style={{ display:"flex", alignItems:"center", gap:5 }}>
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
@@ -1632,7 +1490,7 @@ function HeroBand({ tournament, totalPlayers, doneMatches, totalMatches, sportKe
             </div>
           )}
 
-          {/* Share + Register CTA — availability is date-driven (registration_open), not the lifecycle status */}
+          {/* Share */}
           <div style={{ display:"flex", gap:10, marginTop:18, flexWrap:"wrap" }}>
             {slug && (
               <ShareButton
@@ -1641,56 +1499,7 @@ function HeroBand({ tournament, totalPlayers, doneMatches, totalMatches, sportKe
                 title={`${tournament.name} — Live on TheScoreBoard`}
               />
             )}
-            {onRegister && tournament.registration_open && (
-              <button onClick={onRegister} style={{ background:"var(--primary)", color:"#fff", border:"none", borderRadius:8, padding:"12px 28px", fontFamily:"var(--font-display)", fontSize:9, fontWeight:800, letterSpacing:1.5, textTransform:"uppercase", cursor:"pointer" }}>
-                Register Now →
-              </button>
-            )}
           </div>
-
-          {/* Entry fee / register-by / contact — shown only when the organiser has set them */}
-          {hasStatsBar && (
-            <div style={{
-              display:"flex", gap: isMobile ? 18 : 32, flexWrap:"wrap",
-              marginTop:22, paddingTop:16,
-              borderTop:`1px solid ${tournament.poster_url ? "rgba(255,255,255,.15)" : "var(--border)"}`,
-            }}>
-              {tournament.payment_amount != null && (
-                <div>
-                  <div style={{ fontSize:9, fontWeight:800, letterSpacing:1.5, textTransform:"uppercase", color: tournament.poster_url ? "rgba(255,255,255,.45)" : "var(--muted)", marginBottom:3 }}>
-                    Entry
-                  </div>
-                  <div style={{ fontSize:14, fontWeight:800, fontFamily:"var(--font-display)", color: tournament.poster_url ? "#fff" : "var(--ink)" }}>
-                    Rs. {tournament.payment_amount}
-                  </div>
-                </div>
-              )}
-              {regDeadline && (
-                <div>
-                  <div style={{ fontSize:9, fontWeight:800, letterSpacing:1.5, textTransform:"uppercase", color: tournament.poster_url ? "rgba(255,255,255,.45)" : "var(--muted)", marginBottom:3 }}>
-                    Register By
-                  </div>
-                  <div style={{ fontSize:14, fontWeight:800, fontFamily:"var(--font-display)", color: tournament.poster_url ? "#fff" : "var(--ink)" }}>
-                    {regDeadline}
-                  </div>
-                </div>
-              )}
-              {contacts.length > 0 && (
-                <div>
-                  <div style={{ fontSize:9, fontWeight:800, letterSpacing:1.5, textTransform:"uppercase", color: tournament.poster_url ? "rgba(255,255,255,.45)" : "var(--muted)", marginBottom:3 }}>
-                    {contacts.length > 1 ? "Contacts" : "Contact"}
-                  </div>
-                  <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
-                    {contacts.map((p, i) => (
-                      <div key={i} style={{ fontSize:14, fontWeight:800, fontFamily:"var(--font-display)", color:"var(--primary)" }}>
-                        {p.name}{p.phone ? ` · ${p.phone}` : ""}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Sponsor credit strip — presented-by + other tiers, visible on every tab */}
           <HeroSponsorStrip sponsors={tournament.sponsors} dark={!!tournament.poster_url} />
@@ -1866,27 +1675,6 @@ function TournamentHero({ tournament, liveCount, totalPlayers, doneMatches, tota
   const sportLabel = SPORT_META[sportKey]?.label;
   const status = tournament.status || "draft";
 
-  const STATUS_CFG = {
-    live:         { label:"Live Now",          dot:true,  solidC:"var(--primary)", solidB:"rgba(255,107,53,.35)" },
-    registration: { label:"Registration Open", dot:false, solidC:"#16a34a",        solidB:"rgba(22,163,74,.35)"  },
-    completed:    { label:"Completed",         dot:false, solidC:"var(--muted)",   solidB:"var(--border)"        },
-    draft:        { label:"Coming Soon",       dot:false, solidC:"var(--muted)",   solidB:"var(--border)"        },
-    fixtures:     { label:"Fixtures Set",      dot:false, solidC:"#2563eb",        solidB:"rgba(37,99,235,.35)"  },
-  };
-  const stCfg = STATUS_CFG[status] || STATUS_CFG.draft;
-
-  const fmtDate = (d) => {
-    if (!d) return null;
-    const [y, m, day] = d.split("-");
-    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    return `${parseInt(day, 10)} ${months[parseInt(m, 10) - 1]} ${y}`;
-  };
-  const dateStr = (() => {
-    const s = fmtDate(tournament.start_date);
-    const e = fmtDate(tournament.end_date);
-    if (!s) return null;
-    return (!e || e === s) ? s : `${s} – ${e}`;
-  })();
   const locationStr = [tournament.city, tournament.state].filter(Boolean).join(", ") || null;
 
   const hasBanner = !!tournament.poster_url;
@@ -1970,19 +1758,8 @@ function TournamentHero({ tournament, liveCount, totalPlayers, doneMatches, tota
             {/* Right side: chips → name → meta */}
             <div style={{ flex:1, minWidth:0 }}>
 
-              {/* Status + sport chips */}
+              {/* Sport chips */}
               <div style={{ display:"flex", gap:5, marginBottom:9, flexWrap:"wrap" }}>
-                <span style={{
-                  display:"inline-flex", alignItems:"center", gap:4,
-                  background: chipBg, backdropFilter: glass ? "blur(8px)" : "none",
-                  color: glass ? stCfg.solidC : stCfg.solidC,
-                  border:`1px solid ${glass ? chipBd : stCfg.solidB}`,
-                  fontFamily:"var(--font-display)", fontSize:8, fontWeight:900,
-                  textTransform:"uppercase", letterSpacing:1.5, padding:"3px 10px", borderRadius:20,
-                }}>
-                  {stCfg.dot && <span className="live-dot" style={{ width:5, height:5, background:"var(--primary)" }}/>}
-                  {stCfg.label}
-                </span>
                 {sportLabel && (
                   <span style={{
                     display:"inline-flex", alignItems:"center",
@@ -2012,15 +1789,9 @@ function TournamentHero({ tournament, liveCount, totalPlayers, doneMatches, tota
                 {tournament.name}
               </h1>
 
-              {/* Compact meta: date · location · venue */}
-              {(dateStr || locationStr || tournament.venue) && (
+              {/* Compact meta: location · venue */}
+              {(locationStr || tournament.venue) && (
                 <div style={{ display:"flex", flexWrap:"wrap", gap:"5px 14px" }}>
-                  {dateStr && (
-                    <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:12, color:mutedC }}>
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                      {dateStr}
-                    </span>
-                  )}
                   {(locationStr || tournament.venue) && (
                     <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:12, color:mutedC }}>
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
@@ -2296,24 +2067,6 @@ function HeroSponsorStrip({ sponsors, dark }) {
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-function InfoSection({ info }) {
-  const w = useW();
-  const isMobile = w < 640;
-
-  return (
-    <div style={{ maxWidth:820, margin:"0 auto", padding: isMobile ? "28px 16px" : "44px 40px" }}>
-      <BroadcastSectionHeader title="TOURNAMENT INFO" />
-
-      <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-
-        {/* ── Prize Pool / Registration / Overview / Rules from tournament_info JSON ── */}
-        <TournamentInfoDisplay info={info} twoCol={false} />
-
-      </div>
     </div>
   );
 }
@@ -3002,10 +2755,6 @@ export default function TournamentPublic() {
     (ev.all_matches || []).some(m => BRACKET_STAGES.has(m.stage))
   );
 
-  const ti = t.tournament_info || {};
-  // Always show Info tab — tournament always has at minimum name/date/location
-  const hasInfo = true;
-
   const primarySportKey = events[0]?.sport_key;
 
   // Individual sports (badminton / table tennis single play) → label tabs "Players"
@@ -3017,23 +2766,21 @@ export default function TournamentPublic() {
     <div className="app">
       <TickerBar allMatches={[]} />
       <TopBar darkMode={darkMode} onToggleDark={toggleDark} />
-      <HeroBand tournament={t} totalPlayers={0} doneMatches={0} totalMatches={0} sportKey={primarySportKey} onRegister={null} events={events} slug={slug} />
+      <HeroBand tournament={t} totalPlayers={0} doneMatches={0} totalMatches={0} sportKey={primarySportKey} events={events} slug={slug} />
       <DraftView tournament={t} />
       <SiteFooter />
     </div>
   );
 
-  // Build section list — order: Info | Matches | Knockout | Table | Players
+  // Build section list — order: Matches | Knockout | Table | Players
   const sections = [
-    ...(hasInfo    ? [{ id:"info",        label:"Info"                             }] : []),
     { id:"fixtures",    label:"Matches",      count: allMatches.length },
     ...(hasBracket ? [{ id:"bracket",    label:"Knockout"                        }] : []),
     ...(hasBoard   ? [{ id:"leaderboard", label:"Table"                           }] : []),
     ...(hasTeams   ? [{ id:"teams",       label: teamsLabel,     count: teamCount }] : []),
   ];
 
-  // Default landing tab is Matches (live scores), even though Info leads the
-  // tab bar order — spectators want to see the action first.
+  // Default landing tab is Matches (live scores) — spectators want to see the action first.
   const effectiveActive = activeId || "fixtures";
 
   return (
@@ -3059,7 +2806,6 @@ export default function TournamentPublic() {
         doneMatches={doneCt}
         totalMatches={allMatches.length}
         sportKey={primarySportKey}
-        onRegister={() => navigate(`/t/${slug}/register`)}
         events={events}
         slug={slug}
       />
@@ -3082,7 +2828,6 @@ export default function TournamentPublic() {
         {effectiveActive === "teams"       && hasTeams  && <TeamsSection events={events} isIndividual={isIndividualSport} />}
         {effectiveActive === "leaderboard" && hasBoard  && <LeaderboardSection events={events} />}
         {effectiveActive === "bracket"     && hasBracket && <BracketSection events={events} />}
-        {effectiveActive === "info"        && hasInfo   && <InfoSection info={t.tournament_info} />}
       </div>
 
       {/* ── Footer ── */}

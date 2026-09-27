@@ -2,9 +2,12 @@
  * FootballScorer — fullscreen Football match scorer.
  * Stadium Lights design.
  *
- * Phase flow: Normal (1st/2nd half) → Extra Time (knockout draw) → Penalties
+ * No half selector — just goals and a single "Full Time" button.
+ * Phase flow: Normal → (knockout draw only) Extra Time → Penalties.
+ * A knockout match can never end level: after a drawn Full Time, 5-a-side
+ * goes straight to a penalty shootout; other formats play extra time first
+ * and go to penalties if still level.
  * Penalty phase: hit/miss per kick, 5 standard slots, undo support.
- * "Full Time" is disabled during 1st half.
  */
 import { useState } from "react";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -36,6 +39,8 @@ function PenSlot({ result, isCurrent }) {
   );
 }
 
+const PHASE_HALF = { normal: 1, extra_time: 3, penalties: 5 };
+
 export default function FootballScorer({ match, config, onScore, onFinish, onWalkover, onGoLive, onPause, onReset, onClose }) {
   const isMobile = useIsMobile();
   const p1 = match.player_1 || {};
@@ -47,7 +52,10 @@ export default function FootballScorer({ match, config, onScore, onFinish, onWal
   const ls     = match.live_state || {};
 
   const isKnockout = !!(match.stage && !["group"].includes(match.stage));
+  const isFiveASide = Number(config?.team_size) === 5;
 
+  // live_state.half is kept as a phase marker for the public views:
+  // 1 = normal time, 3 = extra time, 5 = penalties.
   const getInitPhase = () => {
     const h = ls.half || 1;
     if (h >= 5) return "penalties";
@@ -57,7 +65,6 @@ export default function FootballScorer({ match, config, onScore, onFinish, onWal
 
   const [goals1,       setGoals1]       = useState(currentSet?.score_p1 ?? (p1?.score ?? 0));
   const [goals2,       setGoals2]       = useState(currentSet?.score_p2 ?? (p2?.score ?? 0));
-  const [half,         setHalf]         = useState(ls.half || 1);
   const [phase,        setPhase]        = useState(getInitPhase);
   // Penalty histories: arrays of "H" (hit) or "M" (miss)
   const [penH1,        setPenH1]        = useState(ls.pen_h1 || []);
@@ -80,17 +87,17 @@ export default function FootballScorer({ match, config, onScore, onFinish, onWal
     const g1 = pos === 1 ? goals1 + 1 : goals1;
     const g2 = pos === 2 ? goals2 + 1 : goals2;
     if (pos === 1) setGoals1(g1); else setGoals2(g2);
-    onScore(g1, g2, { football_half: half });
+    onScore(g1, g2, { football_half: PHASE_HALF[phase] });
   };
   const removeGoal = (pos) => {
     const g1 = pos === 1 ? Math.max(0, goals1 - 1) : goals1;
     const g2 = pos === 2 ? Math.max(0, goals2 - 1) : goals2;
     if (pos === 1) setGoals1(g1); else setGoals2(g2);
-    onScore(g1, g2, { football_half: half });
+    onScore(g1, g2, { football_half: PHASE_HALF[phase] });
   };
-  const changeHalf = (h) => {
-    setHalf(h);
-    onScore(goals1, goals2, { football_half: h });
+  const enterPhase = (nextPhase) => {
+    setPhase(nextPhase);
+    onScore(goals1, goals2, { football_half: PHASE_HALF[nextPhase] });
   };
 
   // ── Penalty helpers ────────────────────────────────────────
@@ -137,13 +144,13 @@ export default function FootballScorer({ match, config, onScore, onFinish, onWal
   const canDeclare = penH1.length === penH2.length && penH1.length > 0 && penGoals1 !== penGoals2;
 
   // ── Phase transitions ──────────────────────────────────────
+  // A knockout match can't end level: level after normal time → penalties
+  // (5-a-side) or extra time (other formats); level after extra time → penalties.
   const handleFullTime = () => {
     if (phase === "normal" && isKnockout && isDraw) {
-      setPhase("extra_time");
-      changeHalf(3);
-    } else if (phase === "extra_time" && isKnockout && goals1 === goals2) {
-      setPhase("penalties");
-      changeHalf(5);
+      enterPhase(isFiveASide ? "penalties" : "extra_time");
+    } else if (phase === "extra_time" && isKnockout && isDraw) {
+      enterPhase("penalties");
     } else {
       onFinish(goals1 > goals2 ? 1 : goals2 > goals1 ? 2 : null);
     }
@@ -161,25 +168,20 @@ export default function FootballScorer({ match, config, onScore, onFinish, onWal
     onFinish(winner);
   };
 
-  // Disable Full Time during 1st half of normal time
-  const canEndNormal = !(phase === "normal" && half === 1);
-
   const phaseLabel = phase === "penalties"
     ? "Penalty Shootout"
     : phase === "extra_time"
-    ? (half === 3 ? "Extra Time · 1st Half" : "Extra Time · 2nd Half")
-    : (half === 1 ? "1st Half" : "2nd Half");
+    ? "Extra Time"
+    : "Live";
 
   const ftLabel = (() => {
-    if (phase === "normal" && isKnockout && isDraw) return "Full Time → Extra Time";
-    if (phase === "extra_time" && isKnockout && goals1 === goals2) return "End ET → Penalties";
+    if (phase === "normal" && isKnockout && isDraw) return isFiveASide ? "Full Time → Penalties" : "Full Time → Extra Time";
+    if (phase === "extra_time" && isKnockout && isDraw) return "End ET → Penalties";
     if (phase === "extra_time") return "⏱ End Extra Time";
     return "⏱ Full Time";
   })();
 
-  const ftColor = (phase === "normal" && isKnockout && isDraw) ||
-                  (phase === "extra_time" && isKnockout && goals1 === goals2)
-    ? c.blue : c.green;
+  const ftColor = (phase !== "penalties" && isKnockout && isDraw) ? c.blue : c.green;
 
   const GoalButton = ({ pos }) => {
     const score  = pos === 1 ? goals1 : goals2;
@@ -214,8 +216,8 @@ export default function FootballScorer({ match, config, onScore, onFinish, onWal
     );
   };
 
-  // ── MOBILE: Ready screen only — the live scoreboard below (half selector,
-  // penalty shootout grid, walkover/pause/reset) is already dark-themed and
+  // ── MOBILE: Ready screen only — the live scoreboard below (penalty
+  // shootout grid, walkover/pause/reset) is already dark-themed and
   // keeps its desktop layout on mobile since it has no mockup to follow. ──
   if (isMobile && isPreLive) {
     return (
@@ -303,30 +305,6 @@ export default function FootballScorer({ match, config, onScore, onFinish, onWal
           <GoalButton pos={2} />
         </div>
 
-        {/* HALF SELECTOR — Normal */}
-        {!isDone && !isPreLive && phase === "normal" && (
-          <div style={{ display:"flex", gap:8, justifyContent:"center" }}>
-            {[1, 2].map(h => (
-              <button key={h} onClick={() => changeHalf(h)}
-                style={{ flex:1, maxWidth:130, padding:"10px 0", borderRadius:8, background: half===h ? c.green : "transparent", border:`2px solid ${half===h ? c.green : c.border}`, color: half===h ? c.bg : c.muted, fontFamily:"'Unbounded',sans-serif", fontSize:12, fontWeight:800, cursor:"pointer" }}>
-                {h === 1 ? "1st Half" : "2nd Half"}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* HALF SELECTOR — Extra Time */}
-        {!isDone && !isPreLive && phase === "extra_time" && (
-          <div style={{ display:"flex", gap:8, justifyContent:"center" }}>
-            {[3, 4].map(h => (
-              <button key={h} onClick={() => changeHalf(h)}
-                style={{ flex:1, maxWidth:150, padding:"10px 0", borderRadius:8, background: half===h ? c.blue : "transparent", border:`2px solid ${half===h ? c.blue : c.border}`, color: half===h ? "#fff" : c.muted, fontFamily:"'Unbounded',sans-serif", fontSize:12, fontWeight:800, cursor:"pointer" }}>
-                {h === 3 ? "ET 1st Half" : "ET 2nd Half"}
-              </button>
-            ))}
-          </div>
-        )}
-
         {/* PENALTIES UI */}
         {!isDone && !isPreLive && phase === "penalties" && (
           <div style={{ background:c.surface, borderRadius:14, border:`2px solid ${c.blue}33`, padding:"20px 16px" }}>
@@ -405,17 +383,10 @@ export default function FootballScorer({ match, config, onScore, onFinish, onWal
         {!isDone && !isPreLive && (
           <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
             {phase !== "penalties" ? (
-              <>
-                <button onClick={handleFullTime} disabled={!canEndNormal}
-                  style={{ width:"100%", padding:"16px 0", background: canEndNormal ? `${ftColor}22` : `${c.border}22`, border:`2px solid ${canEndNormal ? ftColor : c.border}66`, borderRadius:8, fontFamily:"'Unbounded',sans-serif", fontSize:13, fontWeight:900, textTransform:"uppercase", letterSpacing:1, color: canEndNormal ? ftColor : c.muted, cursor: canEndNormal ? "pointer" : "not-allowed", opacity: canEndNormal ? 1 : 0.5 }}>
-                  {canEndNormal ? ftLabel : "⚽ 1st Half in Progress…"}
-                </button>
-                {!canEndNormal && (
-                  <div style={{ textAlign:"center", fontSize:11, color:c.muted }}>
-                    Switch to 2nd Half to enable Full Time
-                  </div>
-                )}
-              </>
+              <button onClick={handleFullTime}
+                style={{ width:"100%", padding:"16px 0", background:`${ftColor}22`, border:`2px solid ${ftColor}66`, borderRadius:8, fontFamily:"'Unbounded',sans-serif", fontSize:13, fontWeight:900, textTransform:"uppercase", letterSpacing:1, color:ftColor, cursor:"pointer" }}>
+                {ftLabel}
+              </button>
             ) : (
               <button onClick={handleDeclareWinner} disabled={!canDeclare}
                 style={{ width:"100%", padding:"16px 0", background:`${c.gold}18`, border:`2px solid ${c.gold}${canDeclare ? "" : "44"}`, borderRadius:8, fontFamily:"'Unbounded',sans-serif", fontSize:13, fontWeight:900, textTransform:"uppercase", letterSpacing:1, color:c.gold, cursor: canDeclare ? "pointer" : "not-allowed", opacity: canDeclare ? 1 : 0.5 }}>

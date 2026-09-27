@@ -178,8 +178,6 @@ def generate_tournament_card(
     sport_label: Optional[str] = None,
     city: Optional[str] = None,
     venue: Optional[str] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
     primary_color: Optional[str] = None,
 ) -> bytes:
     """Render a tournament OG share card.  Returns PNG bytes."""
@@ -223,9 +221,7 @@ def generate_tournament_card(
         title_y += 65
 
     # Bottom meta row
-    meta_parts = [p for p in [venue, city, start_date] if p]
-    if end_date and end_date != start_date:
-        meta_parts.append(f"→ {end_date}")
+    meta_parts = [p for p in [venue, city] if p]
     meta_text = "  ·  ".join(meta_parts)
 
     draw.rectangle([0, OG_H - 90, OG_W, OG_H], fill=C_SURFACE)

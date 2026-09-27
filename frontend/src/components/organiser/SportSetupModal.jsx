@@ -83,45 +83,10 @@ const SPORT_SETUP = {
     ],
   },
 
-  throw_ball: {
-    label: "Throw Ball",
-    subformats: null,             // always team vs team
-    teamConfig: [
-      { key: "gender_format", label: "Category", type: "select",
-        options: [
-          { v: "women_only", label: "Women Only" },
-          { v: "mixed",      label: "Mixed" },
-          { v: "open",       label: "Open" },
-        ],
-        default: "open" },
-    ],
-    scoring: [
-      { key: "sets_to_win", label: "Sets to Win", type: "select",
-        options: [
-          { v: 2, label: "Best of 3 (first to 2)" },
-          { v: 3, label: "Best of 5 (first to 3)" },
-        ],
-        default: 2 },
-    ],
-  },
-
-  tug_of_war: {
-    label: "Tug of War",
-    subformats: null,             // always team vs team
-    teamConfig: null,             // weight categories rendered separately below
-    scoring: [],
-    weightCategories: [
-      { v: "featherweight",     label: "Featherweight (≤500kg)" },
-      { v: "lightweight",       label: "Lightweight (≤560kg)" },
-      { v: "middleweight",      label: "Middleweight (≤600kg)" },
-      { v: "heavyweight",       label: "Heavyweight (≤700kg)" },
-      { v: "superheavyweight",  label: "Super Heavyweight (≤800kg)" },
-    ],
-  },
 };
 
-const SPORT_ABBREV = { table_tennis: "🏓", badminton: "🏸", cricket: "🏏", football: "⚽", throw_ball: "🤾", tug_of_war: "🪢" };
-const SPORT_LABELS = { table_tennis: "Table Tennis", badminton: "Badminton", cricket: "Cricket", football: "Football", throw_ball: "Throw Ball", tug_of_war: "Tug of War" };
+const SPORT_ABBREV = { table_tennis: "🏓", badminton: "🏸", cricket: "🏏", football: "⚽", };
+const SPORT_LABELS = { table_tennis: "Table Tennis", badminton: "Badminton", cricket: "Cricket", football: "Football", };
 
 function buildInitialForm(spec) {
   const form = {
@@ -130,8 +95,6 @@ function buildInitialForm(spec) {
     scoring:        {},
     teamConfig:     {},
     showAdvanced:   false,
-    // Tug of War: which weight categories this tournament runs — all enabled by default.
-    weightCategories: (spec?.weightCategories || []).map(w => w.v),
   };
 
   // Pre-fill scoring defaults
@@ -189,23 +152,6 @@ export default function SportSetupModal({ event, onClose, onSetupComplete }) {
           ?.options?.find(o => o.v === form.teamConfig["team_format"]);
         payload.team_size   = tfOpt?.team_size ?? 11;
         payload.substitutes = parseInt(form.teamConfig["substitutes"] ?? 5);
-      }
-
-      // Throw Ball
-      if (event.sport_key === "throw_ball") {
-        payload.sport_config = {
-          sets_to_win:    form.scoring["sets_to_win"] ?? 2,
-          gender_format:  form.teamConfig["gender_format"] ?? "open",
-        };
-      }
-
-      // Tug of War
-      if (event.sport_key === "tug_of_war") {
-        if (!form.weightCategories.length) {
-          setLoading(false);
-          return setError("Select at least one weight category.");
-        }
-        payload.sport_config = { enabled_weight_categories: form.weightCategories };
       }
 
       const updated = await configureEvent(event.event_id, payload);
@@ -339,34 +285,6 @@ export default function SportSetupModal({ event, onClose, onSetupComplete }) {
                 )}
               </div>
             ))}
-          </div>
-        )}
-
-        {/* ── Weight categories (Tug of War only) */}
-        {spec?.weightCategories && (
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800,
-              textTransform: "uppercase", letterSpacing: 2, color: c.orange, marginBottom: 10 }}>
-              Weight Categories
-            </div>
-            {spec.weightCategories.map(wc => {
-              const checked = form.weightCategories.includes(wc.v);
-              return (
-                <div key={wc.v} style={{ ...selStyle(checked), display: "flex", alignItems: "center", gap: 10 }}
-                  onClick={() => setForm(f => ({
-                    ...f,
-                    weightCategories: checked
-                      ? f.weightCategories.filter(v => v !== wc.v)
-                      : [...f.weightCategories, wc.v],
-                  }))}>
-                  <input type="checkbox" checked={checked} readOnly style={{ pointerEvents: "none" }} />
-                  <span style={{ fontFamily: "var(--font-display)", fontSize: 13, fontWeight: 800,
-                    textTransform: "uppercase", letterSpacing: -0.5, color: checked ? c.orange : c.ink }}>
-                    {wc.label}
-                  </span>
-                </div>
-              );
-            })}
           </div>
         )}
 

@@ -62,7 +62,7 @@ class TeamMember(Base):
     role          = Column(String(50),  nullable=True)   # captain / vice_captain / player
     jersey_number = Column(Integer,     nullable=True)
     age           = Column(Integer,     nullable=True)
-    gender        = Column(String(20),  nullable=True)   # used by gender-restricted events (e.g. throw ball women-only)
+    gender        = Column(String(20),  nullable=True)   # used by gender-restricted events
     created_at    = Column(DateTime(timezone=True), server_default=func.now())
 
     team = relationship("Team", back_populates="members")

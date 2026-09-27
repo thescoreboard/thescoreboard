@@ -18,27 +18,10 @@ export function setStoredUser(user) {
   if (user) localStorage.setItem("tsb_user", JSON.stringify(user));
   else localStorage.removeItem("tsb_user");
 }
-/** True if the cached /me response includes `role` (e.g. "organiser", "player"). */
+/** True if the cached /me response includes `role` (e.g. "organiser"). */
 export function hasRole(role) {
   const u = getStoredUser();
   return Array.isArray(u?.roles) && u.roles.includes(role);
-}
-
-// ── Mode helpers (mirrors mobile SecureStore pattern) ────────────────────────
-// Default is "player" — matches the mobile app and ensures new users land on
-// the player dashboard rather than the (empty) organiser workspace.
-export function getMode() { return localStorage.getItem("tsb_mode") || "player"; }
-export function setMode(mode) { localStorage.setItem("tsb_mode", mode); }
-
-// ── Intent helpers ───────────────────────────────────────────────────────────
-// Call saveIntent('player'|'organiser') at CTA click time (e.g. "REGISTER TO
-// PLAY" → 'player', "ORGANISE" → 'organiser'). consumeIntent() reads + clears
-// it once in post-auth handlers to honour the CTA intent over stored mode.
-export function saveIntent(intent) { localStorage.setItem("tsb_intent", intent); }
-export function consumeIntent() {
-  const v = localStorage.getItem("tsb_intent");
-  if (v) localStorage.removeItem("tsb_intent");
-  return v; // 'player' | 'organiser' | null
 }
 
 // ── Post-login redirect helpers ─────────────────────────────────────────────
@@ -86,10 +69,6 @@ export const register = (d) => request("POST", "/auth/register", d);
 export const login = (d) => request("POST", "/auth/login", d);
 export const googleAuth = (accessToken) => request("POST", "/auth/google", { access_token: accessToken });
 export const getMe             = ()  => request("GET", "/auth/me");
-export const getPlayerProfile  = ()  => request("GET", "/auth/player-profile");
-export const savePlayerProfile  = (d) => request("PUT",  "/auth/player-profile", d);
-export const getMyTournaments   = ()  => request("GET",  "/auth/my-tournaments");
-export const getMyStats         = ()  => request("GET",  "/auth/my-stats");
 export const deleteAccount      = ()  => request("DELETE", "/auth/me");
 
 // Orgs
@@ -106,20 +85,6 @@ export const deleteTournament = (orgId, tournamentId) =>
   request("DELETE", `/orgs/${orgId}/tournaments/${tournamentId}`);
 export const getWorkspace = (tId) => request("GET", `/orgs/tournaments/${tId}/workspace`);
 export const transitionTournament = (tId, status) => request("POST", `/orgs/tournaments/${tId}/transition?target_status=${status}`);
-
-// Excel export — binary response, so it bypasses the JSON request() helper.
-export async function exportTournamentExcel(tId) {
-  const res = await fetch(`${BASE}/orgs/tournaments/${tId}/export`, { headers: authHeaders() });
-  if (!res.ok) {
-    if (res.status === 401) clearToken();
-    const e = await res.json().catch(() => ({}));
-    throw new Error(e.detail || `Export failed: ${res.status}`);
-  }
-  const blob = await res.blob();
-  const cd = res.headers.get("Content-Disposition") || "";
-  const match = cd.match(/filename="?([^"]+)"?/);
-  return { blob, filename: match ? match[1] : "thescoreboard_export.xlsx" };
-}
 
 // Sponsors
 export const createSponsor = (tId, d)         => request("POST",   `/orgs/tournaments/${tId}/sponsors`, d);
@@ -145,8 +110,6 @@ export const generateFixtures = (eId, thirdPlace = false) =>
 export const generateGroupMatches = (eId) =>
   request("POST", `/events/${eId}/generate-group-matches`);
 export const getStandings = (eId) => request("GET", `/orgs/events/${eId}/standings`);
-export const setParticipantPaid = (eId, epId, paid) =>
-  request("PATCH", `/orgs/events/${eId}/participants/${epId}/payment?paid=${paid}`);
 
 // Players
 export const createPlayer = (d, orgId) => request("POST", `/players/${orgId ? `?org_id=${orgId}` : ""}`, d);
@@ -174,33 +137,6 @@ export const walkoverMatch = (mId, winnerPos) => request("POST", `/matches/${mId
 export const rematchMatch = (mId) => request("POST", `/matches/${mId}/rematch`);
 export const deleteMatch = (mId) => request("DELETE", `/matches/${mId}`);
 
-// Throw Ball
-export const getThrowBallLineup   = (mId) => request("GET", `/matches/${mId}/throw-ball/lineup`);
-export const submitThrowBallLineup = (mId, position, lineup) =>
-  request("POST", `/matches/${mId}/throw-ball/lineup`, { position, lineup });
-export const recordThrowBallTimeout = (mId, position) =>
-  request("POST", `/matches/${mId}/throw-ball/timeout`, { position });
-export const substituteThrowBallPlayer = (mId, position, outId, inId) =>
-  request("POST", `/matches/${mId}/throw-ball/substitute`, {
-    position, out_team_member_id: outId, in_team_member_id: inId,
-  });
-export const getThrowBallLive = (mId) => request("GET", `/matches/${mId}/throw-ball/live`);
-
-// Tug of War
-export const getTugOfWarWeighIns = (mId) => request("GET", `/matches/${mId}/tug-of-war/weigh-in`);
-export const submitTugOfWarWeighIn = (mId, position, pullers) =>
-  request("POST", `/matches/${mId}/tug-of-war/weigh-in`, { position, pullers });
-export const recordTugOfWarPull = (mId, winningPosition, durationSeconds) =>
-  request("POST", `/matches/${mId}/tug-of-war/pull`, { winning_position: winningPosition, duration_seconds: durationSeconds });
-export const recordTugOfWarCaution = (mId, position, reason) =>
-  request("POST", `/matches/${mId}/tug-of-war/caution`, { position, reason });
-export const tugOfWarInjurySub = (mId, position, injuredId, replacementId, replacementWeightKg) =>
-  request("POST", `/matches/${mId}/tug-of-war/injury-substitute`, {
-    position, injured_team_member_id: injuredId, replacement_team_member_id: replacementId,
-    replacement_weight_kg: replacementWeightKg,
-  });
-export const getTugOfWarLive = (mId) => request("GET", `/matches/${mId}/tug-of-war/live`);
-export const getTugOfWarWeightCategories = (eId) => request("GET", `/events/${eId}/tug-of-war/weight-categories`);
 
 // Public
 export const getHomepageData = (q) => request("GET", `/public/home${q ? `?q=${encodeURIComponent(q)}` : ""}`);
@@ -225,6 +161,7 @@ export const createTeam        = (orgId, d)       => request("POST",   `/orgs/${
 export const getOrgTeams       = (orgId, sport)   => request("GET",    `/orgs/${orgId}/teams${sport ? `?sport_key=${sport}` : ""}`);
 export const deleteTeam        = (teamId)         => request("DELETE", `/teams/${teamId}`);
 export const addTeamToEvent    = (eId, tId, gId)  => request("POST",   `/events/${eId}/teams?team_id=${tId}${gId ? `&group_id=${gId}` : ""}`);
+export const assignTeamGroup   = (eId, tId, gId)  => request("PATCH",  `/events/${eId}/teams/${tId}${gId != null ? `?group_id=${gId}` : ""}`);
 export const removeTeamFromEvent = (eId, tId)     => request("DELETE", `/events/${eId}/teams/${tId}`);
 export const getEventTeams     = (eId)            => request("GET",    `/events/${eId}/teams`);
  

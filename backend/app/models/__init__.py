@@ -9,8 +9,6 @@ from app.models.event import Event
 from app.models.player import Player, Team, TeamMember
 from app.models.group import Group, EventParticipant, Standing
 from app.models.match import Match, MatchParticipant, MatchSet
-from app.models.throw_ball import ThrowBallLineup
-from app.models.tug_of_war import TugOfWarWeighIn, TugOfWarPuller
 
 __all__ = [
     "User",
@@ -21,6 +19,4 @@ __all__ = [
     "Player", "Team", "TeamMember",
     "Group", "EventParticipant", "Standing",
     "Match", "MatchParticipant", "MatchSet",
-    "ThrowBallLineup",
-    "TugOfWarWeighIn", "TugOfWarPuller",
 ]
