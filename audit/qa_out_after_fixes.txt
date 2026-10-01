@@ -1,7 +1,7 @@
-PASS | org: create | {"org_id":1,"name":"Club","slug":"club","description":null,"city":null,"state":null,"logo_url":null,"created_at":"2026-10-01T18:54:34"}
-PASS | org: duplicate name allowed w/ unique slug | {"org_id":2,"name":"Club","slug":"club-koah","description":null,"city":null,"state":null,"logo_url":null,"created_at":"2026-10-01T18:54:34"}
-FAIL | org: empty name rejected | 200
-FAIL | org: 400-char name rejected (<=255 col) | 200
+PASS | org: create | {"org_id":1,"name":"Club","slug":"club","description":null,"city":null,"state":null,"logo_url":null,"created_at":"2026-10-01T19:06:01"}
+PASS | org: duplicate name allowed w/ unique slug | {"org_id":2,"name":"Club","slug":"club-sck3","description":null,"city":null,"state":null,"logo_url":null,"created_at":"2026-10-01T19:06:01"}
+PASS | org: empty name rejected | 400
+PASS | org: 400-char name rejected (<=255 col) | 400
 PASS | org: unauthenticated 401 | 401
 PASS | org: other user GET 403 | 403
 PASS | org: other user DELETE 403 | 403
@@ -9,12 +9,12 @@ PASS | org: non-existent 404 | 404
 PASS | org: other user list tournaments 403 | 403
 PASS | org: other user create tournament 403 | 403
 INFO | org: no PATCH/edit endpoint for org | 405
-FAIL | tournament: empty name rejected | 200
+PASS | tournament: empty name rejected | 400
 PASS | tournament: unknown sport 400 | 400
-FAIL | tournament: unknown format at create rejected | 200 (format unvalidated in create wizard)
-FAIL | tournament: bogus participant_type rejected | 200
+PASS | tournament: unknown format at create rejected | 400 (format unvalidated in create wizard)
+PASS | tournament: bogus participant_type rejected | 400
 PASS | tournament: invalid sport_config rejected | 400
-INFO | tournament: single-sport with format=None | 200 -> created event with format NULL
+INFO | tournament: single-sport with format=None | 400 -> {"detail":"Format is required (one of ['group_knockout', 'direct_knockout', 'rou
 PASS | tournament: duplicate name unique slug | 
 INFO | tournament: start_date/end_date columns exist but no create/update schema exposes them | dates cannot be set via API
 PASS | round robin n=2: C(n,2) matches, unique pairs, each plays n-1 | matches=1 expected=1
@@ -36,7 +36,7 @@ PASS | KO n=4 third=False: match count n-1(+1) | got 3 expected 3
 PASS | KO n=4 third=False: full bracket completes via advancement, champion decided | done=3 stuck=[]
 PASS | KO n=4 third=True: match count n-1(+1) | got 4 expected 4
 PASS | KO n=4 third=True: full bracket completes via advancement, champion decided | done=4 stuck=[]
-PASS | KO n=4: third-place match gets semi losers | {10, 12} vs {10, 12}
+PASS | KO n=4: third-place match gets semi losers | {11, 13} vs {11, 13}
 PASS | KO n=5 third=False: match count n-1(+1) | got 4 expected 4
 PASS | KO n=5 third=False: full bracket completes via advancement, champion decided | done=4 stuck=[]
 PASS | KO n=5 third=True: match count n-1(+1) | got 5 expected 5
@@ -50,7 +50,7 @@ PASS | KO n=8 third=False: match count n-1(+1) | got 7 expected 7
 PASS | KO n=8 third=False: full bracket completes via advancement, champion decided | done=7 stuck=[]
 PASS | KO n=8 third=True: match count n-1(+1) | got 8 expected 8
 PASS | KO n=8 third=True: full bracket completes via advancement, champion decided | done=8 stuck=[]
-PASS | KO n=8: third-place match gets semi losers | {45, 47} vs {45, 47}
+PASS | KO n=8: third-place match gets semi losers | {51, 47} vs {51, 47}
 PASS | KO n=9 third=False: match count n-1(+1) | got 8 expected 8
 PASS | KO n=9 third=False: full bracket completes via advancement, champion decided | done=8 stuck=[]
 PASS | KO n=12 third=False: match count n-1(+1) | got 11 expected 11
@@ -92,16 +92,16 @@ INFO | unauth GET /players/events/{id}/participants keys | ['group_id', 'group_n
 PASS | auth: tampered JWT rejected | 
 PASS | auth: wrong password 401 | 
 PASS | auth: duplicate email rejected | 400
-FAIL | auth: 1-char password rejected | 200
-PASS | football: finish 3-1 ok | {"match_id":181,"event_id":30,"group_id":null,"stage":"round_robin","requires_winner":false,"round":
+PASS | auth: 1-char password rejected | 400
+PASS | football: finish 3-1 ok | {"match_id":181,"event_id":27,"group_id":null,"stage":"round_robin","requires_winner":false,"round":
 PASS | football: winner flagged | 
 PASS | football: 1-1 draw finishable in league | 
 PASS | football: 0-0 finishable | 
 PASS | football: high scoring 9-8 | 
-INFO | football standings rows (after 3-1, 1-1, 0-0, 9-8[tm1 wins]) | [('T1', 2, 1, 0, 2, 3, 1, 0, 0), ('T2', 2, 1, 1, 2, 10, 11, 0, 0), ('T3', 2, 0, 0, 0, 1, 1, 0, 0), ('T4', 2, 0, 1, 0, 9, 10, 0, 0)]
-FAIL | football: draw earns a point (3/1/0 or 2/1/0) | tm3 pts=0 (draw gives 0 — no draw column in standings)
-FAIL | football: standings expose draws + goal difference | row keys=['participant_id', 'name', 'matches_played', 'wins', 'losses', 'sets_won', 'sets_lost', 'points_for', 'points_against', 'ranking_points']
-INFO | football: backend win = 2 pts (web/mobile public tables use 3) | 2
+INFO | football standings rows (after 3-1, 1-1, 0-0, 9-8[tm1 wins]) | [('T1', 2, 1, 0, 4, 3, 1, 0, 0), ('T2', 2, 1, 1, 3, 10, 11, 0, 0), ('T3', 2, 0, 0, 2, 1, 1, 0, 0), ('T4', 2, 0, 1, 1, 9, 10, 0, 0)]
+PASS | football: draw earns a point (3/1/0 or 2/1/0) | tm3 pts=1 (draw gives 0 — no draw column in standings)
+PASS | football: standings expose draws + goal difference | row keys=['participant_id', 'name', 'played', 'wins', 'draws', 'losses', 'points', 'scored', 'conceded', 'diff', 'sets_won', 'sets_lost', 'points_for', 'points_against', 'nrr', 'rank', 'matches_played', 'ranking_points']
+INFO | football: backend win = 2 pts (web/mobile public tables use 3) | 4
 PASS | football: goals-for aggregated correctly (tm0: 3+0=3) | 3
 PASS | football: score change on a DONE match is rejected (or requires rematch) | 409; status now=done winner flags=True/False (score 3-1) -> stale winner vs new score
 PASS | football: negative score rejected | 
@@ -116,18 +116,18 @@ PASS | football: finish already-done match rejected | 409
 PASS | walkover on done match 400 | 
 INFO | walkover winner_position=5 on done | 400
 PASS | football KO: draw cannot be finished | {"detail":"A knockout match cannot end in a draw — settle it with extra time or penalties."}
-PASS | football KO: draw settled by explicit winner (pens) ok | {"match_id":187,"event_id":31,"group_id":null,"stage":"semi","requires_winner":true,"round":1,"statu
+PASS | football KO: draw settled by explicit winner (pens) ok | {"match_id":187,"event_id":28,"group_id":null,"stage":"semi","requires_winner":true,"round":1,"statu
 PASS | football KO: winner advanced to final | 
 PASS | football KO: re-scoring a done semi cannot silently desync from bracket | 409
-PASS | cricket: innings1 score accepted | {"match_id":190,"event_id":32,"group_id":null,"stage":"round_robin","requires_winner":false,"round":1,"status":"live","t
-PASS | cricket: end innings 1 -> match still live | {"match_id":190,"event_id":32,"group_id":null,"stage":"round_robin","requires_winner":false,"round":1,"status":"live","t
+PASS | cricket: innings1 score accepted | {"match_id":190,"event_id":29,"group_id":null,"stage":"round_robin","requires_winner":false,"round":1,"status":"live","t
+PASS | cricket: end innings 1 -> match still live | {"match_id":190,"event_id":29,"group_id":null,"stage":"round_robin","requires_winner":false,"round":1,"status":"live","t
 PASS | cricket: after innings 2 team1 (150) beats team2 (120): done, winner=pos1 | {'player_id': None, 'team_id': 46, 'name': 'T1-194', 'score': 150, 'is_winner': True}, {'player_id': None, 'team_id': 47, 'name': 'T2-195', 'score': 120, 'is_winner': False}
 PASS | cricket: aggregate score = runs per team | 150-120
-PASS | cricket: tie ends as done w/ no winner (should offer super over/tie) | {"match_id":191,"event_id":32,"group_id":null,"stage":"round_robin","requires_winner":false,"round":1,"status":"done","table_number":2,"curr
-INFO | cricket standings rows (150/6 beat 120/10; tie 100/8 v 100/9) | [('T1', 2, 1, 2, 470, 33), ('T3', 1, 0, 0, 17, 200), ('T2', 1, 0, 0, 16, 270)]
-FAIL | cricket: standings points_for = runs scored by that team only (150) | points_for=470 points_against=33 (sums BOTH innings' runs / wickets)
-FAIL | cricket: Net Run Rate present in standings | ['participant_id', 'name', 'matches_played', 'wins', 'losses', 'sets_won', 'sets_lost', 'points_for', 'points_against', 'ranking_points']
-FAIL | cricket: tie awards points to both | tie => 0 points each
+PASS | cricket: tie ends as done w/ no winner (should offer super over/tie) | {"match_id":191,"event_id":29,"group_id":null,"stage":"round_robin","requires_winner":false,"round":1,"status":"done","table_number":2,"curr
+INFO | cricket standings rows (150/6 beat 120/10; tie 100/8 v 100/9) | [('T1', 2, 1, 3, 250, 220), ('T3', 1, 0, 1, 100, 100), ('T2', 1, 0, 0, 120, 150)]
+PASS | cricket: standings points_for = runs scored by that team only (150 + 100 across its two matches) | points_for=250 points_against=220 (sums BOTH innings' runs / wickets)
+PASS | cricket: Net Run Rate present in standings | ['participant_id', 'name', 'played', 'wins', 'draws', 'losses', 'points', 'scored', 'conceded', 'diff', 'sets_won', 'sets_lost', 'points_for', 'points_against', 'nrr', 'rank', 'matches_played', 'ranking_points']
+PASS | cricket: tie awards points to both | tie => 0 points each
 PASS | cricket: 11 wickets rejected (config wickets=10) | 400
 PASS | cricket: 999 balls (>20 overs) rejected | 400
 PASS | cricket: innings=7 rejected (2 innings + super over) | 400
@@ -136,7 +136,7 @@ PASS | TT: 10-10 not complete |
 PASS | TT: 11-10 not complete (win by 2) | 
 PASS | TT: 12-10 completes set 1 | 
 PASS | TT: 2-0 ends BO3, match done, winner=1 | done 2-0
-FAIL | TT: scoring a finished match rejected | 409
+PASS | TT: scoring a finished match rejected | 409
 PASS | TT: score passing through 7-0 does NOT end the set (real rule: play to 11) | set1 complete=False winner=None — default config instant_win.enabled=True
 PASS | TT: impossible set score 25-3 rejected | 400 set1=0-0 complete=False
 PASS | TT: 15-14 is a legal in-progress deuce score (kept open) | 200
@@ -163,7 +163,7 @@ INFO | sets_to_win=0 accepted | 400
 PASS | TT rematch resets match | 
 PASS | TT standings after rematch revert to 0 played (cache invalidated) | [('T1-', 0), ('T2-', 0)]
 PASS | TT score reversal (A 2-0 -> rematch -> B 2-0): standings flip | T1-246 -> T2-247
-INFO | TT walkover standings (fabricated 11-0 sets) | [('T1-', 1, 22, 0, 2), ('T2-', 0, 0, 22, 0)]
+INFO | TT walkover standings (fabricated 11-0 sets) | [('T1-', 1, 0, 0, 0), ('T2-', 0, 0, 0, 0)]
 PASS | TT undo-set on finished match reopens it | 200 status=live
 PASS | G+KO n=8 groups=2: groups balanced (diff<=1) | [4, 4]
 PASS | G+KO n=8 g=2: each group bracket has size-1 matches | {1: 3, 2: 3}
@@ -211,7 +211,7 @@ INFO | G+KO design | groups are mini single-elimination brackets; qualification 
 PASS | G+KO football 6 teams / 2 groups generated | {"ok":true,"groups_created":2,"matches_created":4,"participants_per_group":[3,3]}
 PASS | delete team in fixtures blocked 409 | 409
 INFO | delete a scheduled fixture | 200
-FAIL | delete a DONE bracket match whose winner advanced is blocked | 200 -> final keeps advanced winner; bracket corrupt
+PASS | delete a DONE bracket match retracts its advanced winner (or is refused) | 200
 PASS | delete tournament cascades | 
 PASS | delete tournament leaves no orphan matches/participants | matches=0 eps=0
 PASS | delete org ok | 
@@ -222,4 +222,4 @@ PASS | unauth PATCH /api/matches/1/score -> 401 | 401
 PASS | unauth POST /api/matches/1/finish -> 401 | 401
 PASS | unauth DELETE /api/matches/1 -> 401 | 401
 
-TOTAL pass=191 fail=13 info=19
+TOTAL pass=204 fail=0 info=19

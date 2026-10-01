@@ -193,6 +193,9 @@ export const apiCreateGroup = (token: string, eId: number, name: string) =>
   request('POST', `/players/events/${eId}/groups?name=${encodeURIComponent(name)}`, token);
 export const apiGetStandings = (token: string, eId: number) =>
   request('GET', `/orgs/events/${eId}/standings`, token);
+// Public (no auth): the same table the organiser sees — computed only on the backend.
+export const apiGetEventStandings = (eId: number) =>
+  request('GET', `/events/${eId}/standings`, null);
 
 // ── Fixtures ────────────────────────────────────────────────────
 export const apiGenerateFixtures = (token: string, eId: number, thirdPlace = false) =>
