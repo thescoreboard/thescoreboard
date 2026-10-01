@@ -525,7 +525,8 @@ def _build_tournament_page_data(slug: str, db: Session) -> dict:
         )
         .first()
     )
-    if not tournament:
+    if not tournament or not tournament.is_published or not tournament.is_active:
+        # Drafts / unpublished tournaments are not public.
         raise HTTPException(status_code=404, detail="Tournament not found")
 
     active_events = [e for e in tournament.events if e.is_active]
@@ -683,7 +684,8 @@ def get_tournament_by_sport(
         )
         .first()
     )
-    if not tournament:
+    if not tournament or not tournament.is_published or not tournament.is_active:
+        # Drafts / unpublished tournaments are not public.
         raise HTTPException(status_code=404, detail="Tournament not found")
 
     active_events = [e for e in tournament.events if e.is_active and e.sport_key == sport_key]

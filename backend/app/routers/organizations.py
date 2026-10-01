@@ -114,6 +114,15 @@ def delete_org(
         db.delete(t)
     db.flush()
 
+    # Players and teams carry PII (phone/email) and would otherwise be
+    # orphaned with org_id NULL (FK is SET NULL). Delete them with the org.
+    from app.models.player import Player, Team
+    for team in db.query(Team).filter(Team.org_id == org_id).all():
+        db.delete(team)
+    for player in db.query(Player).filter(Player.org_id == org_id).all():
+        db.delete(player)
+    db.flush()
+
     # Delete all memberships
     db.query(OrgMember).filter(OrgMember.org_id == org_id).delete()
 

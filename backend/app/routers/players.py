@@ -74,6 +74,10 @@ def delete_player(
     # SEC-3: verify ownership before deleting
     if player.org_id:
         _check_org_member(player.org_id, user, db)
+    elif player.user_id != user.user_id and not user.is_superadmin:
+        # org-less players are personal profiles (or orphans of a deleted org):
+        # only the linked user may delete them.
+        raise HTTPException(status_code=403, detail="Not authorized to delete this player")
     # DI-3: refuse to hard-delete a player who has already appeared in matches —
     # the match_participants FK is ON DELETE CASCADE, so deleting would silently
     # strip them out of completed matches and corrupt history/standings.
@@ -106,11 +110,22 @@ def add_player_to_event(
     user: User = Depends(get_current_user),
 ):
     # SEC-4: enrolling a player mutates the event — require tournament access
-    event, _, _ = require_event_access(event_id, user, db)
+    event, tournament, _ = require_event_access(event_id, user, db)
 
+    if event.participant_type != "individual":
+        raise HTTPException(
+            status_code=400,
+            detail=f"This event is for {event.participant_type} entries, not individual players.",
+        )
     player = db.query(Player).filter(Player.player_id == player_id).first()
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
+    if player.org_id is not None and player.org_id != tournament.org_id:
+        raise HTTPException(status_code=403, detail="This player belongs to a different organization")
+    if group_id is not None and not db.query(Group).filter(
+        Group.group_id == group_id, Group.event_id == event_id
+    ).first():
+        raise HTTPException(status_code=404, detail="Group not found in this event")
 
     existing = db.query(EventParticipant).filter(
         EventParticipant.event_id == event_id,
