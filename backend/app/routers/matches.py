@@ -741,6 +741,10 @@ def update_score(
         ls["runs"]    = data.score_p1
         ls["wickets"] = data.score_p2
         ls["balls"]   = balls
+        # Per-innings record (kept after the live counters reset) - net run rate needs balls faced.
+        inn_rec = dict(ls.get("innings") or {})
+        inn_rec[str(innings)] = {"runs": data.score_p1, "wickets": data.score_p2, "balls": balls}
+        ls["innings"] = inn_rec
         if data.overs:
             ls["overs"] = data.overs
         if data.cricket_live_state:

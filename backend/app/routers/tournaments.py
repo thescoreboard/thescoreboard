@@ -7,6 +7,7 @@ from typing import List
 from datetime import datetime, timezone
 
 from app.utils.match_rules import requires_winner
+from app.services.standings import compute_event_standings
 from app.database import get_db
 from app.models.user import User
 from app.models.organization import Organization, OrgMember
@@ -820,8 +821,9 @@ def get_standings(
     db: Session = Depends(get_db),
 ):
     """
-    Compute live standings for round_robin or group_knockout events.
-    Calculated from completed matches, cached for a few seconds per event.
+    League table for round_robin / group_knockout events (rules live in
+    app/services/standings.py — the only implementation; clients just render it).
+    Calculated from finished matches, cached for a few seconds per event.
     Returns a list of groups (or a single 'all' group for round_robin).
     """
     cached = _standings_cache.get(event_id)
@@ -832,141 +834,7 @@ def get_standings(
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
 
-    is_team = event.participant_type in ("team", "doubles_pair")
-
-    # Load all done matches with participants and sets
-    matches = (
-        db.query(Match)
-        .filter(Match.event_id == event_id, Match.status == "done")
-        .options(
-            joinedload(Match.participants).joinedload(MatchParticipant.player),
-            joinedload(Match.participants).joinedload(MatchParticipant.team),
-            joinedload(Match.sets),
-        )
-        .all()
-    )
-
-    def _pid(mp):
-        return mp.team_id if is_team else mp.player_id
-
-    def _name(mp):
-        if is_team and mp.team:
-            return mp.team.name
-        if mp.player:
-            return mp.player.name
-        return "Unknown"
-
-    # Build standings dict: {group_id: {participant_id: row}}
-    standings: dict = {}
-
-    def _ensure(group_id, pid, name):
-        if group_id not in standings:
-            standings[group_id] = {}
-        if pid not in standings[group_id]:
-            standings[group_id][pid] = {
-                "participant_id": pid,
-                "name":           name,
-                "matches_played": 0,
-                "wins":           0,
-                "losses":         0,
-                "sets_won":       0,
-                "sets_lost":      0,
-                "points_for":     0,
-                "points_against": 0,
-                "ranking_points": 0,
-            }
-
-    for m in matches:
-        parts = sorted(m.participants, key=lambda p: p.position)
-        if len(parts) < 2:
-            continue
-
-        mp1, mp2 = parts[0], parts[1]
-        p1_id = _pid(mp1)
-        p2_id = _pid(mp2)
-        if not p1_id or not p2_id:
-            continue
-
-        gid = m.group_id  # None for round_robin
-
-        _ensure(gid, p1_id, _name(mp1))
-        _ensure(gid, p2_id, _name(mp2))
-
-        row1 = standings[gid][p1_id]
-        row2 = standings[gid][p2_id]
-
-        # Sets and points from MatchSet records
-        p1_sets = p2_sets = 0
-        p1_pts  = p2_pts  = 0
-        for s in m.sets:
-            if s.is_complete:
-                if s.winner_position == 1:
-                    p1_sets += 1
-                elif s.winner_position == 2:
-                    p2_sets += 1
-            p1_pts += s.score_p1
-            p2_pts += s.score_p2
-
-        # Aggregate scores from MatchParticipant for aggregate-scored sports
-        # (use sets won as sets for TT/badminton, or mp.score for others)
-        if not m.sets:
-            p1_sets = mp1.score
-            p2_sets = mp2.score
-
-        winner_pos = mp1.position if mp1.is_winner else (mp2.position if mp2.is_winner else None)
-
-        row1["matches_played"] += 1
-        row2["matches_played"] += 1
-        row1["sets_won"]  += p1_sets
-        row1["sets_lost"] += p2_sets
-        row2["sets_won"]  += p2_sets
-        row2["sets_lost"] += p1_sets
-        row1["points_for"]     += p1_pts
-        row1["points_against"] += p2_pts
-        row2["points_for"]     += p2_pts
-        row2["points_against"] += p1_pts
-
-        if winner_pos == 1:
-            row1["wins"]           += 1
-            row1["ranking_points"] += 2
-            row2["losses"]         += 1
-        elif winner_pos == 2:
-            row2["wins"]           += 1
-            row2["ranking_points"] += 2
-            row1["losses"]         += 1
-
-    # Ensure ALL enrolled participants appear even with 0 played
-    eps = (
-        db.query(EventParticipant)
-        .filter(EventParticipant.event_id == event_id)
-        .options(
-            joinedload(EventParticipant.player),
-            joinedload(EventParticipant.team),
-        )
-        .all()
-    )
-    for ep in eps:
-        pid  = ep.team_id if is_team else ep.player_id
-        name = ep.team.name if (is_team and ep.team) else (ep.player.name if ep.player else "Unknown")
-        _ensure(ep.group_id, pid, name)
-
-    # Sort each group by: ranking_points desc, set_ratio desc, points_ratio desc
-    def _sort_key(row):
-        sr = row["sets_won"] / max(row["sets_lost"], 1)
-        pr = row["points_for"] / max(row["points_against"], 1)
-        return (-row["ranking_points"], -sr, -pr)
-
-    groups_out = []
-    if event.format == "group_knockout":
-        groups = db.query(Group).filter(Group.event_id == event_id).order_by(Group.name).all()
-        for g in groups:
-            rows = sorted(standings.get(g.group_id, {}).values(), key=_sort_key)
-            groups_out.append({"group_id": g.group_id, "name": g.name, "rows": rows})
-    else:
-        rows = sorted(standings.get(None, {}).values(), key=_sort_key)
-        groups_out.append({"group_id": None, "name": "Standings", "rows": rows})
-
-    result = {"event_id": event_id, "format": event.format, "groups": groups_out}
+    result = compute_event_standings(event, db)
     _standings_cache[event_id] = {"data": result, "ts": _time.time()}
     return result
 
