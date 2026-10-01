@@ -24,7 +24,7 @@ export default function RegisterScreen() {
   const handleRegister = async () => {
     if (!name.trim())                    { setError('Name is required.'); return; }
     if (!email.trim())                   { setError('Email is required.'); return; }
-    if (password.length < 6)             { setError('Password must be at least 6 characters.'); return; }
+    if (password.length < 8)             { setError('Password must be at least 8 characters.'); return; }
     setError(''); setLoading(true);
     try {
       const data = await apiRegister({ name: name.trim(), email: email.trim().toLowerCase(), password, phone: phone.trim()||null });

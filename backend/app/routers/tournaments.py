@@ -18,6 +18,7 @@ from app.models.group import Group, EventParticipant
 from app.schemas.tournament import TournamentCreate, TournamentUpdate, TournamentOut, SponsorCreate, SponsorUpdate, SponsorOut
 from app.utils.auth import get_current_user
 from app.utils.slug import generate_unique_slug
+from app.utils.validation import clean_name, check_format, check_participant_type
 from app.utils.tournament_access import (
     require_tournament_access, require_org_access, require_event_access,
     ROLE_ADMIN, ROLE_STAFF,
@@ -111,14 +112,20 @@ def create_tournament(
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
 
+    name = clean_name(data.name, "Tournament name")
+    for ev_input in data.events:
+        clean_name(ev_input.name, "Event name")
+        check_format(ev_input.format, required=not data.is_multi_sport)
+        check_participant_type(ev_input.participant_type)
+
     slug = generate_unique_slug(
-        data.name,
+        name,
         lambda s: db.query(Tournament).filter(Tournament.slug == s).first() is not None,
     )
 
     tournament = Tournament(
         org_id=org_id,
-        name=data.name,
+        name=name,
         slug=slug,
         venue=data.venue,
         city=data.city,
@@ -427,6 +434,8 @@ def update_tournament(
     for field, val in data.model_dump(exclude_unset=True).items():
         if field in _PATCH_BLOCKED:
             continue
+        if field == "name":
+            val = clean_name(val, "Tournament name")
         setattr(t, field, val)
 
     db.commit()

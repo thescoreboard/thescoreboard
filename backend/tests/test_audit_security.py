@@ -99,3 +99,20 @@ def test_draft_tournament_not_public_until_published(world):
     assert c.get(f"/api/public/t/{t['slug']}").status_code == 404
     assert c.post(f"/api/orgs/tournaments/{t['tournament_id']}/transition?target_status=live", headers=A).status_code == 200
     assert c.get(f"/api/public/t/{t['slug']}").status_code == 200
+
+
+def test_input_validation(world):
+    c, A, B, org_a, org_b, tour = world
+    assert c.post("/api/orgs/", json={"name": "   "}, headers=A).status_code == 400
+    assert c.post("/api/orgs/", json={"name": "x" * 300}, headers=A).status_code == 400
+    ev = {"name": "E", "sport_key": "football", "format": "round_robin", "participant_type": "team"}
+    mk = lambda **kw: c.post(f"/api/orgs/{org_a}/tournaments", json={"name": "T", "events": [{**ev, **kw}]}, headers=A)
+    assert c.post(f"/api/orgs/{org_a}/tournaments", json={"name": "", "events": []}, headers=A).status_code == 400
+    assert mk(format="swiss").status_code == 400
+    assert mk(format=None).status_code == 400                 # single-sport needs a format
+    assert mk(participant_type="banana").status_code == 400
+    assert mk(name=" ").status_code == 400
+    assert mk().status_code == 200
+    r = c.post("/api/auth/register", json={"email": "w@t.com", "password": "1234567", "name": "W"})
+    assert r.status_code == 400 and "8 characters" in r.json()["detail"]
+    assert c.post("/api/auth/register", json={"email": "w@t.com", "password": "12345678", "name": "W"}).status_code == 200

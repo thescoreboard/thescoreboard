@@ -13,6 +13,7 @@ from app.models.match import Match
 from app.schemas.event import EventCreate, EventUpdate, EventOut, EventSetupInput
 from app.utils.auth import get_current_user
 from app.utils.event_rules import EVENT_STATUSES
+from app.utils.validation import clean_name, check_format, check_participant_type
 from app.utils.tournament_access import require_tournament_access, require_event_access
 from app.sports.registry import get_sport_engine, list_sports
 
@@ -58,14 +59,12 @@ def create_event(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=f"Invalid sport config: {e}")
 
-    if data.format not in _VALID_FORMATS:
-        raise HTTPException(status_code=400, detail=f"Format must be one of {_VALID_FORMATS}")
-
-    participant_type = data.participant_type or "individual"
+    check_format(data.format, required=True)
+    participant_type = check_participant_type(data.participant_type)
 
     event = Event(
         tournament_id=tournament_id,
-        name=data.name,
+        name=clean_name(data.name, "Event name"),
         sport_key=data.sport_key,
         format=data.format,
         participant_type=participant_type,
@@ -209,7 +208,7 @@ def configure_event(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=f"Invalid sport config: {e}")
 
-    participant_type = data.participant_type or "individual"
+    participant_type = check_participant_type(data.participant_type)
 
     # ── Apply
     event.format           = data.format
