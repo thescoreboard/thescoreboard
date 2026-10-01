@@ -8,6 +8,7 @@ in the environment, so this shields tests from backend/.env.
 import os
 
 os.environ["DATABASE_URL"] = "sqlite://"
+os.environ["SKIP_MIGRATIONS"] = "1"
 
 import pytest
 from sqlalchemy import create_engine

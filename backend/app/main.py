@@ -2,6 +2,7 @@
 TheScoreBoard API — main application.
 """
 import logging
+import os
 import traceback
 
 from fastapi import FastAPI, Request
@@ -15,30 +16,38 @@ from app.routers import auth, organizations, tournaments, tournament_members, ev
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Run alembic migrations on startup (handles prod deploys automatically)
-try:
-    from alembic.config import Config
-    from alembic import command as alembic_command
-    import os
-    alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "..", "alembic.ini"))
-    alembic_cfg.set_main_option("script_location", os.path.join(os.path.dirname(__file__), "..", "alembic"))
-    alembic_command.upgrade(alembic_cfg, "head")
-    logger.info("Alembic migrations applied.")
-except Exception as _mig_err:
-    if not settings.DATABASE_URL:
-        # No DB configured (local dev) — fall back to create_all.
-        logger.warning(f"Alembic migration skipped: {_mig_err}")
-        try:
-            Base.metadata.create_all(bind=engine)
-        except Exception as _ddl_err:
-            logger.error(f"DB unreachable at startup — continuing degraded: {_ddl_err}")
-    else:
-        # A real DB is configured: create_all() is a no-op for tables that
-        # already exist, so silently swallowing this would leave the app
-        # running against a stale schema (e.g. missing columns added by
-        # pending migrations). Fail the deploy loudly instead.
-        logger.exception("Alembic migration failed against a configured DATABASE_URL")
-        raise
+# Run alembic migrations on startup (handles prod deploys automatically).
+# SKIP_MIGRATIONS=1 (used by the test suite) bypasses Alembic and builds the
+# schema with create_all instead — the migration chain starts at 0009 and
+# cannot bootstrap an empty database on its own.
+if os.getenv("SKIP_MIGRATIONS") == "1":
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as _ddl_err:
+        logger.error(f"DB unreachable at startup — continuing degraded: {_ddl_err}")
+else:
+    try:
+        from alembic.config import Config
+        from alembic import command as alembic_command
+        alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "..", "alembic.ini"))
+        alembic_cfg.set_main_option("script_location", os.path.join(os.path.dirname(__file__), "..", "alembic"))
+        alembic_command.upgrade(alembic_cfg, "head")
+        logger.info("Alembic migrations applied.")
+    except Exception as _mig_err:
+        if not settings.DATABASE_URL:
+            # No DB configured (local dev) — fall back to create_all.
+            logger.warning(f"Alembic migration skipped: {_mig_err}")
+            try:
+                Base.metadata.create_all(bind=engine)
+            except Exception as _ddl_err:
+                logger.error(f"DB unreachable at startup — continuing degraded: {_ddl_err}")
+        else:
+            # A real DB is configured: create_all() is a no-op for tables that
+            # already exist, so silently swallowing this would leave the app
+            # running against a stale schema (e.g. missing columns added by
+            # pending migrations). Fail the deploy loudly instead.
+            logger.exception("Alembic migration failed against a configured DATABASE_URL")
+            raise
 
 app = FastAPI(title=f"{settings.APP_NAME} API", version=settings.VERSION)
 

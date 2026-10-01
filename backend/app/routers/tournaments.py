@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 from typing import List
 from datetime import datetime, timezone
 
+from app.utils.match_rules import requires_winner
 from app.database import get_db
 from app.models.user import User
 from app.models.organization import Organization, OrgMember
@@ -73,6 +74,7 @@ def _serialize_match(m: Match) -> dict:
         "event_id":       m.event_id,
         "group_id":       m.group_id,
         "stage":          m.stage,
+        "requires_winner": requires_winner(m.stage),
         "round":          m.round,
         "status":         m.status,
         "table_number":   m.table_number,

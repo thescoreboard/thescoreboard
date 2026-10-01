@@ -8,6 +8,7 @@ from typing import Optional, List
 from datetime import datetime, timezone
 import time
 
+from app.utils.match_rules import requires_winner
 from app.database import get_db
 from app.models.tournament import Tournament
 from app.models.event import Event
@@ -132,6 +133,7 @@ def _serialize_match(m: Match) -> dict:
         "group_id":       m.group_id,
         "group":          m.group.name if m.group else None,
         "stage":          m.stage,
+        "requires_winner": requires_winner(m.stage),
         "round":          m.round,
         "status":         m.status,
         "table_number":   m.table_number,

@@ -13,6 +13,7 @@ End-to-end integration test through the real HTTP API:
 import os
 
 os.environ["DATABASE_URL"] = "sqlite://"
+os.environ["SKIP_MIGRATIONS"] = "1"
 
 import pytest
 from fastapi.testclient import TestClient

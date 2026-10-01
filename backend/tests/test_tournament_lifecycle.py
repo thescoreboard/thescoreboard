@@ -7,6 +7,7 @@ import os
 from datetime import date, timedelta
 
 os.environ["DATABASE_URL"] = "sqlite://"
+os.environ["SKIP_MIGRATIONS"] = "1"
 
 import pytest
 from fastapi.testclient import TestClient

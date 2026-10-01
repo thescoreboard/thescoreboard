@@ -14,6 +14,7 @@ Also regression-tests the previously-unprotected endpoints
 import os
 
 os.environ["DATABASE_URL"] = "sqlite://"
+os.environ["SKIP_MIGRATIONS"] = "1"
 
 from fastapi.testclient import TestClient
 
