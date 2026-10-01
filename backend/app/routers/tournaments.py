@@ -524,6 +524,7 @@ def delete_sponsor(
 def transition_status(
     tournament_id: int,
     target_status: str,
+    force: bool = False,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -546,6 +547,22 @@ def transition_status(
             status_code=400,
             detail=f"Cannot move from '{t.status}' to '{target_status}'",
         )
+
+    if target_status == "completed" and not force:
+        # Every playable fixture (both sides known) must be finished first.
+        pending = (
+            db.query(Match)
+            .join(Event, Event.event_id == Match.event_id)
+            .filter(Event.tournament_id == tournament_id, Event.is_active == True, Match.status != "done")
+            .options(joinedload(Match.participants))
+            .all()
+        )
+        playable = [m for m in pending if len(m.participants) == 2]
+        if playable:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{len(playable)} match(es) are not finished yet. Finish them before completing the tournament.",
+            )
 
     t.status = target_status
 

@@ -587,11 +587,13 @@ def update_match_status(
 ):
     match = _load_match(match_id, db)
     _check_event_access(match.event, user, db)
-    if data.status not in ("scheduled", "live", "done"):
+    if data.status not in ("scheduled", "live"):
         raise HTTPException(
             status_code=400,
-            detail="status must be one of: scheduled, live, done",
+            detail="status must be 'scheduled' or 'live' - matches are completed via finish / walkover / scoring",
         )
+    if match.status == "done":
+        raise HTTPException(status_code=409, detail="This match is finished. Use Rematch to change its result.")
     if data.status == "live" and len(match.participants) < 2:
         raise HTTPException(
             status_code=400,
@@ -632,6 +634,8 @@ def update_score(
             status_code=400,
             detail="Both participants must be assigned before this match can be scored",
         )
+    if match.status == "done":
+        raise HTTPException(status_code=409, detail="This match is finished. Use Rematch to change its result.")
     event_id = match.event_id
     event    = match.event                 # no extra DB query — already loaded
     engine   = get_sport_engine(event.sport_key)
@@ -811,6 +815,8 @@ def finish_match(
             status_code=400,
             detail="Both participants must be assigned before this match can be finished",
         )
+    if match.status == "done":
+        raise HTTPException(status_code=409, detail="This match is finished. Use Rematch to change its result.")
     event_id = match.event_id
     event    = match.event                 # no extra DB query
     engine   = get_sport_engine(event.sport_key)
@@ -1030,21 +1036,22 @@ def undo_set(
     if not sets:
         raise HTTPException(status_code=400, detail="No sets to undo")
 
+    if match.status == "done":
+        # Reopen a finished match. Pull the already-propagated winner out of
+        # the next bracket slot first (409 if that match has started).
+        _retract_advancement(match, db)
+        match.status      = "live"
+        match.finished_at = None
+        for p in match.participants:
+            p.is_winner = False
+
     current = sets[-1]
     if current.score_p1 == 0 and current.score_p2 == 0 and len(sets) > 1:
-        if match.status == "done":
-            # Pull the already-propagated winner out of the next bracket slot
-            # (raises 409 if that match has started — prevents silent corruption)
-            _retract_advancement(match, db)
         db.delete(current)
+        match.sets.remove(current)   # keep the in-memory list in sync for the response
         prev = sets[-2]
         prev.is_complete     = False
         prev.winner_position = None
-        if match.status == "done":
-            match.status      = "live"
-            match.finished_at = None
-            for p in match.participants:
-                p.is_winner = False
     else:
         current.score_p1        = 0
         current.score_p2        = 0
@@ -1114,6 +1121,9 @@ def delete_match(
 ):
     match = _load_match(match_id, db)
     _check_event_access(match.event, user, db)
+    # A finished bracket match has already fed its winner into the next round:
+    # pull it back out (409 if that match has started) before deleting.
+    _retract_advancement(match, db)
     db.delete(match)
     db.commit()
     return {"ok": True}
