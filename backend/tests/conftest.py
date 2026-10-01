@@ -35,3 +35,13 @@ def db():
     finally:
         session.close()
         engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiters():
+    """Rate limiters are process-global; tests that register several users
+    from the same fake IP must not trip each other's limits."""
+    from app.utils import ratelimit
+    for lim in (ratelimit.login_limiter, ratelimit.register_limiter, ratelimit.public_registration_limiter):
+        lim.reset()
+    yield

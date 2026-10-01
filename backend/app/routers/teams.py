@@ -16,6 +16,7 @@ from app.models.organization import Organization
 from app.models.event import Event
 from app.models.tournament import Tournament
 from app.utils.auth import get_current_user, get_optional_user
+from app.utils.event_rules import event_has_fixtures, ensure_entries_open, ensure_can_remove_participant, entries_locked
 from app.utils.tournament_access import require_org_access, require_event_access, get_tournament_role
 from app.utils.ratelimit import public_registration_limiter
 
@@ -185,6 +186,8 @@ def add_team_to_event(
     # SEC-6: enrolling mutates the event — require tournament access
     event, tournament, _ = require_event_access(event_id, user, db)
 
+    ensure_entries_open(event, db)
+
     # Accept both "team" and "doubles_pair" — doubles_pair is stored as "team"
     # but old events created before the fix may still have "doubles_pair" in the DB
     if event.participant_type not in ("team", "doubles_pair"):
@@ -244,6 +247,8 @@ def assign_team_group(
         ).first()
         if not group:
             raise HTTPException(status_code=404, detail="Group not found in this event")
+    if group_id != ep.group_id and event_has_fixtures(event_id, db):
+        raise HTTPException(status_code=409, detail="Groups are locked once fixtures have been generated.")
     ep.group_id = group_id
     db.commit()
     return {"ok": True}
@@ -263,6 +268,7 @@ def remove_team_from_event(
     ).first()
     if not ep:
         raise HTTPException(status_code=404, detail="Team not in this event")
+    ensure_can_remove_participant(event_id, team_id=team_id, db=db)
     db.delete(ep)
     db.commit()
     return {"ok": True}
@@ -362,8 +368,9 @@ def public_register_team(
             Event.participant_type.in_(["team", "doubles_pair"]),
         ).all()
 
+    target_events = [e for e in target_events if not entries_locked(e, db)]
     if not target_events:
-        raise HTTPException(status_code=400, detail="No matching events found in this tournament")
+        raise HTTPException(status_code=400, detail="Entries are closed for the selected event(s)")
 
     # ── Doubles-specific validation: exactly 2 members per pair
     doubles_events = [e for e in target_events if e.participant_type == "doubles_pair"]

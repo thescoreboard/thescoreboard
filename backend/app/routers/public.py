@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import time
 
 from app.utils.match_rules import requires_winner
+from app.utils.event_rules import entries_locked
 from app.database import get_db
 from app.models.tournament import Tournament
 from app.models.event import Event
@@ -880,8 +881,9 @@ def public_register(
         Event.event_id.in_(data.event_ids),
         Event.is_active == True,
     ).all()
+    target_events = [e for e in target_events if not entries_locked(e, db)]
     if not target_events:
-        raise HTTPException(status_code=400, detail="No valid events found for the given event_ids.")
+        raise HTTPException(status_code=400, detail="Entries are closed for the selected event(s).")
 
     enrolled = []
     for event in target_events:

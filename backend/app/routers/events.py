@@ -12,6 +12,7 @@ from app.models.event import Event
 from app.models.match import Match
 from app.schemas.event import EventCreate, EventUpdate, EventOut, EventSetupInput
 from app.utils.auth import get_current_user
+from app.utils.event_rules import EVENT_STATUSES
 from app.utils.tournament_access import require_tournament_access, require_event_access
 from app.sports.registry import get_sport_engine, list_sports
 
@@ -113,6 +114,22 @@ def update_event(
             raise HTTPException(status_code=400, detail=f"Invalid sport config: {e}")
 
     update_data = data.model_dump(exclude_unset=True)
+
+    # Same locks as /configure: PATCH must not be a back door around them.
+    if "format" in update_data and update_data["format"] is not None:
+        if update_data["format"] not in _VALID_FORMATS:
+            raise HTTPException(status_code=400, detail=f"Format must be one of {_VALID_FORMATS}")
+    if update_data.get("status") is not None and update_data["status"] not in EVENT_STATUSES:
+        raise HTTPException(status_code=400, detail=f"Status must be one of {list(EVENT_STATUSES)}")
+    if update_data.get("name") is not None and not update_data["name"].strip():
+        raise HTTPException(status_code=400, detail="Name cannot be empty")
+    has_matches = db.query(Match).filter(Match.event_id == event_id).count() > 0
+    if has_matches and "format" in update_data and update_data["format"] != event.format:
+        raise HTTPException(status_code=409, detail="Format cannot be changed after fixtures have been generated.")
+    if "sport_config" in update_data and db.query(Match).filter(
+        Match.event_id == event_id, Match.status == "done"
+    ).count() > 0:
+        raise HTTPException(status_code=409, detail="Scoring rules cannot be changed after matches are completed.")
 
     # participant_type is stored as-is ("individual", "doubles_pair", "team")
 

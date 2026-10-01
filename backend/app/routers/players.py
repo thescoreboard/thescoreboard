@@ -13,6 +13,7 @@ from app.models.player import Player
 from app.models.group import Group, EventParticipant
 from app.schemas.player import PlayerCreate, PlayerOut, EventParticipantOut
 from app.utils.auth import get_current_user
+from app.utils.event_rules import event_has_fixtures, ensure_entries_open, ensure_can_remove_participant
 from app.utils.tournament_access import require_org_access, require_event_access
 
 router = APIRouter()
@@ -112,6 +113,7 @@ def add_player_to_event(
     # SEC-4: enrolling a player mutates the event — require tournament access
     event, tournament, _ = require_event_access(event_id, user, db)
 
+    ensure_entries_open(event, db)
     if event.participant_type != "individual":
         raise HTTPException(
             status_code=400,
@@ -249,6 +251,8 @@ def assign_player_group(
     # group_id=None with seed_level = seed-only update, don't touch group
     if seed_level is None:
         # Legacy group-assignment path: always update group_id
+        if group_id != ep.group_id and event_has_fixtures(event_id, db):
+            raise HTTPException(status_code=409, detail="Groups are locked once fixtures have been generated.")
         ep.group_id = group_id
 
     if seed_level is not None:
@@ -285,6 +289,7 @@ def remove_player_from_event(
     ).first()
     if not ep:
         raise HTTPException(status_code=404, detail="Player not in this event")
+    ensure_can_remove_participant(event_id, player_id=player_id, db=db)
     db.delete(ep)
     db.commit()
     return {"ok": True}

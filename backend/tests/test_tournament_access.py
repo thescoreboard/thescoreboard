@@ -95,7 +95,11 @@ def test_staff_can_do_day_to_day_but_not_danger_zone(db):
         r = client.patch(f"/api/matches/{m.match_id}/status", json={"status": "scheduled"})
         assert r.status_code == 200, r.text
 
-        r = client.post(f"/api/players/events/{ev.event_id}/participants",
+        # (a fresh event: entries close once an event's fixtures exist)
+        ev2 = Event(tournament_id=t.tournament_id, name="TT Open",
+                    sport_key="table_tennis", format="direct_knockout")
+        db.add(ev2); db.commit()
+        r = client.post(f"/api/players/events/{ev2.event_id}/participants",
                         params={"player_id": p.player_id})
         assert r.status_code == 200, r.text
 
