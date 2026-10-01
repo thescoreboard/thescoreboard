@@ -18,6 +18,24 @@ from app.sports.base import BaseSport
 
 class Cricket(BaseSport):
 
+    def validate_score(self, score_p1, score_p2, config, **ctx):
+        """score_p1 = runs, score_p2 = wickets lost, ctx: innings, balls, live_state."""
+        innings = ctx.get("innings") or 1
+        balls = ctx.get("balls") or 0
+        ls = ctx.get("live_state") or {}
+        super_over = innings >= 3
+        if super_over:
+            if not ls.get("is_super_over") or innings > (ls.get("current_innings") or 0):
+                raise ValueError("There is no super over in progress for this innings number.")
+        elif innings not in (1, 2):
+            raise ValueError("Innings must be 1 or 2 (3+ only for a super over).")
+        max_wickets = 2 if super_over else config.get("wickets", 10)
+        max_balls = 6 if super_over else config.get("overs", 20) * 6
+        if score_p2 > max_wickets:
+            raise ValueError(f"Wickets cannot exceed {max_wickets}.")
+        if balls < 0 or balls > max_balls:
+            raise ValueError(f"Balls bowled cannot exceed {max_balls} ({max_balls // 6} overs).")
+
     def get_default_config(self) -> dict:
         return {
             "overs": 20,             # max overs per innings (T20 default)

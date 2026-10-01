@@ -9,8 +9,8 @@ DEFAULT_CONFIG = {
     "deuce_starts_at": 10,   # deuce kicks in when both reach 10
     "serve_interval": 2,     # serve switches every 2 points
     "serve_interval_deuce": 1,  # every 1 point at deuce
-    "instant_win": {          # 7-0 wins the SET early (does not skip remaining sets)
-        "enabled": True,
+    "instant_win": {          # optional house rule: 7-0 wins the SET early (not an official TT rule)
+        "enabled": False,
         "score": 7,
         "opponent_score": 0,
     },

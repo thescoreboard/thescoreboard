@@ -604,6 +604,12 @@ def update_match_status(
     if data.table_number is not None:
         match.table_number = data.table_number
     if data.sets_to_win is not None:
+        allowed = getattr(get_sport_engine(match.event.sport_key), "valid_sets_to_win", None)
+        if allowed is None or data.sets_to_win not in allowed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"sets_to_win must be one of {list(allowed) if allowed else 'n/a for this sport'}",
+            )
         ls = dict(match.live_state or {})
         ls["sets_to_win"] = data.sets_to_win
         match.live_state = ls
@@ -646,7 +652,15 @@ def update_score(
 
     sport = event.sport_key
 
-    # ── TABLE TENNIS, BADMINTON & THROW BALL (set-based) ──────
+    try:
+        engine.validate_score(
+            data.score_p1, data.score_p2, config,
+            innings=data.half, balls=data.minute, live_state=match.live_state,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # ── TABLE TENNIS & BADMINTON (set-based) ──────
     if sport in ("table_tennis", "badminton"):
         if data.current_server is not None:
             match.current_server = data.current_server
