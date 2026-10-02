@@ -15,7 +15,14 @@ from typing import Optional
 from app.sports.base import BaseSport
 
 
+MAX_GOALS = 99
+
+
 class Football(BaseSport):
+
+    def validate_score(self, score_p1, score_p2, config, **ctx):
+        if max(score_p1, score_p2) > MAX_GOALS:
+            raise ValueError(f"A team cannot score more than {MAX_GOALS} goals.")
 
     def get_default_config(self) -> dict:
         return {

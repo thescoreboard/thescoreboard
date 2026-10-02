@@ -6,13 +6,11 @@ from datetime import date, datetime
 class EventInput(BaseModel):
     """Event to create as part of tournament creation wizard.
 
-    For single-sport tournaments, format must be provided (non-null).
-    For multi-sport tournaments, format may be None — the event is stored as
-    unconfigured and the organiser completes setup from the dashboard.
+    format must be provided.
     """
     name: str
     sport_key: str
-    format: Optional[str] = None          # None for multi-sport (setup later)
+    format: Optional[str] = None
     participant_type: Optional[str] = "individual"  # individual | doubles_pair | team
     sport_config: Optional[dict] = None
     squad_size:   Optional[int] = None    # cricket
@@ -28,7 +26,6 @@ class TournamentCreate(BaseModel):
     state: Optional[str] = None
     venue_lat: Optional[float] = None
     venue_lng: Optional[float] = None
-    is_multi_sport: bool = False
     is_published: bool = False
     primary_color: Optional[str] = None
     events: List[EventInput] = []
@@ -94,7 +91,6 @@ class TournamentOut(BaseModel):
     name: str
     slug: str
     description: Optional[str]
-    is_multi_sport: bool
     registration_start_date: Optional[date] = None
     registration_end_date: Optional[date] = None
     poster_url: Optional[str]

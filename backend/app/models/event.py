@@ -30,7 +30,6 @@ class Event(Base):
     sport_key = Column(String(50), nullable=False, index=True)
 
     # Format of the event: group_knockout | direct_knockout | round_robin
-    # NULL for multi-sport events that have not yet been configured via setup wizard
     format = Column(String(50), nullable=True, default=None)
 
     # Is this a team sport or individual?
@@ -38,8 +37,7 @@ class Event(Base):
     # team: match_participants link to teams
     participant_type = Column(String(20), nullable=False, default="individual")  # individual | team
 
-    # False for multi-sport events until the organiser completes the sport setup wizard.
-    # True for all single-sport events and any event after setup is saved.
+    # Legacy flag — always True for events created by the wizard.
     is_configured = Column(Boolean, default=True)
 
     # Sport-specific config stored as JSON

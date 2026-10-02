@@ -19,6 +19,7 @@ from app.schemas.auth import (
     RegisterRequest, LoginRequest, GoogleAuthRequest,
     TokenOut, UserOut, PlayerProfileIn, PlayerProfileOut,
 )
+from app.utils.validation import check_password, clean_name
 from app.utils.auth import hash_password, verify_password, create_access_token, get_current_user
 from app.utils.ratelimit import login_limiter, register_limiter
 from app.utils.roles import compute_roles
@@ -31,6 +32,8 @@ router = APIRouter()
 
 @router.post("/register", response_model=TokenOut, dependencies=[Depends(register_limiter)])
 def register(req: RegisterRequest, db: Session = Depends(get_db)):
+    check_password(req.password)
+    name = clean_name(req.name, "Name", 150)
     existing = db.query(User).filter(User.email == req.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -38,7 +41,7 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     user = User(
         email=req.email,
         password_hash=hash_password(req.password),
-        name=req.name,
+        name=name,
         phone=req.phone,
     )
     db.add(user)

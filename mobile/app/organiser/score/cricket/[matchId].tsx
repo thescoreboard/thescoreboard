@@ -268,7 +268,7 @@ export default function CricketScorerScreen() {
   };
 
   const inningsLabel = isSuperOver ? 'Super Over' : innings === 1 ? '1st Innings' : '2nd Innings';
-  const isKnockout   = !!(match.stage && match.stage !== 'group');
+  const isKnockout   = match.requires_winner ?? !!(match.stage && !['group', 'round_robin'].includes(match.stage));
 
   // ── Setup screen (toss) ───────────────────────────────────────
   if (!setupDone && !isDone) {

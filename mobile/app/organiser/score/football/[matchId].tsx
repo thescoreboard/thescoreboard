@@ -98,7 +98,7 @@ export default function FootballScorerScreen() {
 
   const isDone     = match.status === 'done';
   const isPreLive  = match.status === 'scheduled';
-  const isKnockout = !!(match.stage && match.stage !== 'group');
+  const isKnockout = match.requires_winner ?? !!(match.stage && !['group', 'round_robin'].includes(match.stage));
 
   const p1Name = match.player_1?.name ?? 'Team 1';
   const p2Name = match.player_2?.name ?? 'Team 2';

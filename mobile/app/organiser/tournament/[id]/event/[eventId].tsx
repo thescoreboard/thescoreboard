@@ -3,6 +3,7 @@
  * Tabs: Overview · Players/Pairs/Teams · Fixtures · Standings · Live
  * Live matches launch the dedicated scorer screen for each sport.
  */
+import StandingsTable from '../../../../../src/components/shared/StandingsTable';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
@@ -1435,49 +1436,9 @@ export default function EventWorkspaceScreen() {
         {/* ══ STANDINGS ══════════════════════════════════════════ */}
         {tab === 'standings' && (
           <View>
-            {!standings ? (
-              <ActivityIndicator color={c.primary} style={{ marginTop: 24 }} />
-            ) : !standings.groups?.length ? (
-              <Text style={{ color: c.muted, textAlign: 'center', marginTop: 24 }}>
-                No standings yet. Complete some matches first.
-              </Text>
-            ) : standings.groups.map((group: any, gi: number) => (
-              <View key={gi} style={{ marginBottom: 24 }}>
-                {standings.groups.length > 1 && (
-                  <Text style={{ fontSize: 11, fontWeight: '800', color: c.muted,
-                    textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>{group.name}</Text>
-                )}
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={{ borderRadius: 10, borderWidth: 1, borderColor: c.border, overflow: 'hidden', minWidth: 380 }}>
-                    {/* Header */}
-                    <View style={{ flexDirection: 'row', backgroundColor: c.elevated, paddingHorizontal: 8, paddingVertical: 8 }}>
-                      {['#', 'Name', 'MP', 'W', 'L', 'Pts'].map((h, i) => (
-                        <Text key={h} style={{ fontSize: 10, fontWeight: '800', color: c.muted,
-                          textTransform: 'uppercase', letterSpacing: 0.5,
-                          width: i === 0 ? 24 : i === 1 ? 120 : 44, textAlign: i === 1 ? 'left' : 'center' }}>
-                          {h}
-                        </Text>
-                      ))}
-                    </View>
-                    {group.rows?.map((row: any, ri: number) => (
-                      <View key={row.participant_id} style={{ flexDirection: 'row', paddingHorizontal: 8, paddingVertical: 10,
-                        backgroundColor: ri % 2 === 0 ? 'transparent' : c.surface,
-                        borderTopWidth: 1, borderTopColor: c.border }}>
-                        <Text style={{ width: 24, textAlign: 'center', color: c.muted, fontWeight: '700', fontSize: 12 }}>{ri + 1}</Text>
-                        <Text style={{ width: 120, color: c.ink, fontWeight: '600', fontSize: 12 }} numberOfLines={1}>{row.name}</Text>
-                        <Text style={{ width: 44, textAlign: 'center', color: c.muted, fontSize: 12 }}>{row.matches_played}</Text>
-                        <Text style={{ width: 44, textAlign: 'center', color: '#22c55e', fontWeight: '700', fontSize: 12 }}>{row.wins}</Text>
-                        <Text style={{ width: 44, textAlign: 'center', color: '#ef4444', fontSize: 12 }}>{row.losses}</Text>
-                        <Text style={{ width: 44, textAlign: 'center', color: c.primary, fontWeight: '900', fontSize: 13 }}>{row.ranking_points}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </ScrollView>
-                <Text style={{ fontSize: 10, color: c.muted, marginTop: 6 }}>
-                  MP = Matches Played · W/L = Wins/Losses · Pts = Ranking Points
-                </Text>
-              </View>
-            ))}
+            {!standings
+              ? <ActivityIndicator color={c.primary} style={{ marginTop: 24 }} />
+              : <StandingsTable groups={standings.groups} sportKey={standings.sport_key ?? currentEvent.sport_key} />}
           </View>
         )}
 

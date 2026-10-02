@@ -5,6 +5,7 @@ import os
 from types import SimpleNamespace
 
 os.environ["DATABASE_URL"] = "sqlite://"
+os.environ["SKIP_MIGRATIONS"] = "1"
 
 import pytest
 from fastapi import HTTPException

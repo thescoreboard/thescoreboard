@@ -12,6 +12,7 @@ from app.models.tournament import Tournament
 from app.schemas.organization import OrgCreate, OrgOut
 from app.utils.auth import get_current_user
 from app.utils.slug import generate_unique_slug
+from app.utils.validation import clean_name
 
 router = APIRouter()
 
@@ -52,12 +53,13 @@ def create_org(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    name = clean_name(data.name, "Organization name")
     slug = generate_unique_slug(
-        data.name,
+        name,
         lambda s: db.query(Organization).filter(Organization.slug == s).first() is not None,
     )
     org = Organization(
-        name=data.name,
+        name=name,
         slug=slug,
         description=data.description,
         city=data.city,
@@ -112,6 +114,15 @@ def delete_org(
     tournaments = db.query(Tournament).filter(Tournament.org_id == org_id).all()
     for t in tournaments:
         db.delete(t)
+    db.flush()
+
+    # Players and teams carry PII (phone/email) and would otherwise be
+    # orphaned with org_id NULL (FK is SET NULL). Delete them with the org.
+    from app.models.player import Player, Team
+    for team in db.query(Team).filter(Team.org_id == org_id).all():
+        db.delete(team)
+    for player in db.query(Player).filter(Player.org_id == org_id).all():
+        db.delete(player)
     db.flush()
 
     # Delete all memberships

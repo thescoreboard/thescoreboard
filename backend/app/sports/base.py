@@ -58,6 +58,14 @@ class BaseSport(ABC):
         """
         ...
 
+    def validate_score(self, score_p1: int, score_p2: int, config: dict, **ctx) -> None:
+        """
+        Reject scores the sport's rules cannot produce. Raise ValueError with a
+        user-facing message. Default: accept anything (sports override this).
+        ctx may carry: innings, balls, live_state.
+        """
+        return None
+
     @abstractmethod
     def get_match_summary(self, match) -> dict:
         """

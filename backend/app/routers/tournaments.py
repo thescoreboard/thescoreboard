@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session, joinedload
 from typing import List
 from datetime import datetime, timezone
 
+from app.utils.match_rules import requires_winner
+from app.services.standings import compute_event_standings
 from app.database import get_db
 from app.models.user import User
 from app.models.organization import Organization, OrgMember
@@ -17,6 +19,7 @@ from app.models.group import Group, EventParticipant
 from app.schemas.tournament import TournamentCreate, TournamentUpdate, TournamentOut, SponsorCreate, SponsorUpdate, SponsorOut
 from app.utils.auth import get_current_user
 from app.utils.slug import generate_unique_slug
+from app.utils.validation import clean_name, check_format, check_participant_type
 from app.utils.tournament_access import (
     require_tournament_access, require_org_access, require_event_access,
     ROLE_ADMIN, ROLE_STAFF,
@@ -29,8 +32,8 @@ router = APIRouter()
 
 # ── Helpers ───────────────────────────────────────────────────
 # Authorization lives in app.utils.tournament_access. Membership in the
-# owning org OR a TournamentMember row grants access; "admin" is required
-# for the danger zone (publish/delete/members), "staff" for everything else.
+# owning org grants access; "admin" is required
+# for the danger zone (publish/delete).
 
 def _check_org_access(org_id: int, user: User, db: Session):
     """Org-only check — used where per-tournament roles don't apply
@@ -73,6 +76,7 @@ def _serialize_match(m: Match) -> dict:
         "event_id":       m.event_id,
         "group_id":       m.group_id,
         "stage":          m.stage,
+        "requires_winner": requires_winner(m.stage),
         "round":          m.round,
         "status":         m.status,
         "table_number":   m.table_number,
@@ -109,21 +113,28 @@ def create_tournament(
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
 
+    name = clean_name(data.name, "Tournament name")
+    if len(data.events) != 1:
+        raise HTTPException(status_code=400, detail="A tournament has exactly one sport.")
+    for ev_input in data.events:
+        clean_name(ev_input.name, "Event name")
+        check_format(ev_input.format, required=True)
+        check_participant_type(ev_input.participant_type)
+
     slug = generate_unique_slug(
-        data.name,
+        name,
         lambda s: db.query(Tournament).filter(Tournament.slug == s).first() is not None,
     )
 
     tournament = Tournament(
         org_id=org_id,
-        name=data.name,
+        name=name,
         slug=slug,
         venue=data.venue,
         city=data.city,
         state=data.state,
         venue_lat=data.venue_lat,
         venue_lng=data.venue_lng,
-        is_multi_sport=data.is_multi_sport,
         is_published=data.is_published,
         primary_color=data.primary_color,
         status="draft",
@@ -137,22 +148,15 @@ def create_tournament(
         except KeyError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        if data.is_multi_sport:
-            # Multi-sport: store a clean shell — no defaults injected.
-            # The organiser completes per-sport setup from the dashboard.
-            config        = None
-            is_configured = False
-            event_format  = None          # set during setup wizard
-        else:
-            # Single-sport: apply engine defaults + any provided overrides now.
-            config = engine.get_default_config()
-            if ev_input.sport_config:
-                try:
-                    config = engine.validate_config({**config, **ev_input.sport_config})
-                except ValueError as e:
-                    raise HTTPException(status_code=400, detail=str(e))
-            is_configured = True
-            event_format  = ev_input.format  # validated non-null by creation wizard
+        # Apply engine defaults + any provided overrides now.
+        config = engine.get_default_config()
+        if ev_input.sport_config:
+            try:
+                config = engine.validate_config({**config, **ev_input.sport_config})
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+        is_configured = True
+        event_format  = ev_input.format  # validated non-null above
 
         participant_type = ev_input.participant_type or "individual"
 
@@ -344,7 +348,6 @@ def get_workspace(
             "name":           t.name,
             "slug":           t.slug,
             "description":    t.description,
-            "is_multi_sport": t.is_multi_sport,
             "venue":          t.venue,
             "city":           t.city,
             "state":          t.state,
@@ -425,10 +428,14 @@ def update_tournament(
     for field, val in data.model_dump(exclude_unset=True).items():
         if field in _PATCH_BLOCKED:
             continue
+        if field == "name":
+            val = clean_name(val, "Tournament name")
         setattr(t, field, val)
 
     db.commit()
     db.refresh(t)
+    from app.routers.public import invalidate_public_caches
+    invalidate_public_caches(t.slug)
     return t
 
 
@@ -444,8 +451,11 @@ def delete_tournament(
     t = _check_tournament_access(tournament_id, user, db, min_role=ROLE_ADMIN)
     if t.org_id != org_id:
         raise HTTPException(status_code=404, detail="Tournament not found")
+    slug = t.slug
     db.delete(t)
     db.commit()
+    from app.routers.public import invalidate_public_caches
+    invalidate_public_caches(slug)
     return {"ok": True}
 
 
@@ -522,6 +532,7 @@ def delete_sponsor(
 def transition_status(
     tournament_id: int,
     target_status: str,
+    force: bool = False,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -534,7 +545,7 @@ def transition_status(
     # Just 3 states. Registration availability is a separate, date-driven
     # concern (Tournament.registration_open) — NOT part of this lifecycle.
     _ALLOWED_TRANSITIONS = {
-        "draft":     {"live"},
+        "draft":     {"live", "completed"},
         "live":      {"completed", "draft"},   # draft = unpublish, e.g. published too early by mistake
         "completed": {"live"},                  # reopen, e.g. marked done by mistake
     }
@@ -545,13 +556,28 @@ def transition_status(
             detail=f"Cannot move from '{t.status}' to '{target_status}'",
         )
 
+    if target_status == "completed" and not force:
+        # Every playable fixture (both sides known) must be finished first.
+        pending = (
+            db.query(Match)
+            .join(Event, Event.event_id == Match.event_id)
+            .filter(Event.tournament_id == tournament_id, Event.is_active == True, Match.status != "done")
+            .options(joinedload(Match.participants))
+            .all()
+        )
+        playable = [m for m in pending if len(m.participants) == 2]
+        if playable:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{len(playable)} match(es) are not finished yet. Finish them before completing the tournament.",
+            )
+
     t.status = target_status
 
-    # Auto-publish when going live
-    if target_status == "live":
-        t.is_published = True
-
+    # Visibility is controlled only by the public/private toggle (is_published).
     db.commit()
+    from app.routers.public import invalidate_public_caches
+    invalidate_public_caches(t.slug)
     return {"ok": True, "status": t.status}
 
 
@@ -792,8 +818,9 @@ def get_standings(
     db: Session = Depends(get_db),
 ):
     """
-    Compute live standings for round_robin or group_knockout events.
-    Calculated from completed matches, cached for a few seconds per event.
+    League table for round_robin / group_knockout events (rules live in
+    app/services/standings.py — the only implementation; clients just render it).
+    Calculated from finished matches, cached for a few seconds per event.
     Returns a list of groups (or a single 'all' group for round_robin).
     """
     cached = _standings_cache.get(event_id)
@@ -804,141 +831,7 @@ def get_standings(
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
 
-    is_team = event.participant_type in ("team", "doubles_pair")
-
-    # Load all done matches with participants and sets
-    matches = (
-        db.query(Match)
-        .filter(Match.event_id == event_id, Match.status == "done")
-        .options(
-            joinedload(Match.participants).joinedload(MatchParticipant.player),
-            joinedload(Match.participants).joinedload(MatchParticipant.team),
-            joinedload(Match.sets),
-        )
-        .all()
-    )
-
-    def _pid(mp):
-        return mp.team_id if is_team else mp.player_id
-
-    def _name(mp):
-        if is_team and mp.team:
-            return mp.team.name
-        if mp.player:
-            return mp.player.name
-        return "Unknown"
-
-    # Build standings dict: {group_id: {participant_id: row}}
-    standings: dict = {}
-
-    def _ensure(group_id, pid, name):
-        if group_id not in standings:
-            standings[group_id] = {}
-        if pid not in standings[group_id]:
-            standings[group_id][pid] = {
-                "participant_id": pid,
-                "name":           name,
-                "matches_played": 0,
-                "wins":           0,
-                "losses":         0,
-                "sets_won":       0,
-                "sets_lost":      0,
-                "points_for":     0,
-                "points_against": 0,
-                "ranking_points": 0,
-            }
-
-    for m in matches:
-        parts = sorted(m.participants, key=lambda p: p.position)
-        if len(parts) < 2:
-            continue
-
-        mp1, mp2 = parts[0], parts[1]
-        p1_id = _pid(mp1)
-        p2_id = _pid(mp2)
-        if not p1_id or not p2_id:
-            continue
-
-        gid = m.group_id  # None for round_robin
-
-        _ensure(gid, p1_id, _name(mp1))
-        _ensure(gid, p2_id, _name(mp2))
-
-        row1 = standings[gid][p1_id]
-        row2 = standings[gid][p2_id]
-
-        # Sets and points from MatchSet records
-        p1_sets = p2_sets = 0
-        p1_pts  = p2_pts  = 0
-        for s in m.sets:
-            if s.is_complete:
-                if s.winner_position == 1:
-                    p1_sets += 1
-                elif s.winner_position == 2:
-                    p2_sets += 1
-            p1_pts += s.score_p1
-            p2_pts += s.score_p2
-
-        # Aggregate scores from MatchParticipant for aggregate-scored sports
-        # (use sets won as sets for TT/badminton, or mp.score for others)
-        if not m.sets:
-            p1_sets = mp1.score
-            p2_sets = mp2.score
-
-        winner_pos = mp1.position if mp1.is_winner else (mp2.position if mp2.is_winner else None)
-
-        row1["matches_played"] += 1
-        row2["matches_played"] += 1
-        row1["sets_won"]  += p1_sets
-        row1["sets_lost"] += p2_sets
-        row2["sets_won"]  += p2_sets
-        row2["sets_lost"] += p1_sets
-        row1["points_for"]     += p1_pts
-        row1["points_against"] += p2_pts
-        row2["points_for"]     += p2_pts
-        row2["points_against"] += p1_pts
-
-        if winner_pos == 1:
-            row1["wins"]           += 1
-            row1["ranking_points"] += 2
-            row2["losses"]         += 1
-        elif winner_pos == 2:
-            row2["wins"]           += 1
-            row2["ranking_points"] += 2
-            row1["losses"]         += 1
-
-    # Ensure ALL enrolled participants appear even with 0 played
-    eps = (
-        db.query(EventParticipant)
-        .filter(EventParticipant.event_id == event_id)
-        .options(
-            joinedload(EventParticipant.player),
-            joinedload(EventParticipant.team),
-        )
-        .all()
-    )
-    for ep in eps:
-        pid  = ep.team_id if is_team else ep.player_id
-        name = ep.team.name if (is_team and ep.team) else (ep.player.name if ep.player else "Unknown")
-        _ensure(ep.group_id, pid, name)
-
-    # Sort each group by: ranking_points desc, set_ratio desc, points_ratio desc
-    def _sort_key(row):
-        sr = row["sets_won"] / max(row["sets_lost"], 1)
-        pr = row["points_for"] / max(row["points_against"], 1)
-        return (-row["ranking_points"], -sr, -pr)
-
-    groups_out = []
-    if event.format == "group_knockout":
-        groups = db.query(Group).filter(Group.event_id == event_id).order_by(Group.name).all()
-        for g in groups:
-            rows = sorted(standings.get(g.group_id, {}).values(), key=_sort_key)
-            groups_out.append({"group_id": g.group_id, "name": g.name, "rows": rows})
-    else:
-        rows = sorted(standings.get(None, {}).values(), key=_sort_key)
-        groups_out.append({"group_id": None, "name": "Standings", "rows": rows})
-
-    result = {"event_id": event_id, "format": event.format, "groups": groups_out}
+    result = compute_event_standings(event, db)
     _standings_cache[event_id] = {"data": result, "ts": _time.time()}
     return result
 

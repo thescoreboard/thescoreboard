@@ -11,12 +11,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTheme } from '../../src/hooks/useTheme';
-import { apiGetTournamentBySlug, shareUrl } from '../../src/api/client';
+import { apiGetTournamentBySlug, apiGetEventStandings, shareUrl } from '../../src/api/client';
 import { useTournamentSocket } from '../../src/hooks/useTournamentSocket';
 import MatchCard from '../../src/components/shared/MatchCard';
 import RoadToFinal from '../../src/components/shared/RoadToFinal';
 import { F, SPORT_COLORS, SPORT_LABELS, STATUS_LABELS, STATUS_COLORS } from '../../src/theme';
-import { computeStandings } from '../../src/utils/standings';
+import StandingsTable from '../../src/components/shared/StandingsTable';
 import { STAGE_ORDER, STAGE_LABELS } from '../../src/utils/match';
 import { addRecentlyViewed } from '../../src/utils/recentlyViewed';
 
@@ -274,34 +274,41 @@ function FixturesSection({ events, sportKey }: any) {
 }
 
 // ── Standings section ─────────────────────────────────────────────
+// One table per league / group event, rendered from the backend (no local maths).
 function StandingsSection({ events }: any) {
   const { theme } = useTheme();
   const c = theme.colors;
-  const allMatches = events.flatMap((ev: any) => ev.all_matches ?? []);
-  const rows = computeStandings(allMatches, events[0]?.sport_key);
+  const relevant = events.filter((ev: any) => ev.format === 'round_robin' || ev.format === 'group_knockout');
+  const [tables, setTables] = useState<Record<number, any>>({});
+
+  // Refetch when a match finishes — the page data already refreshes over WS/polling.
+  const refreshKey = relevant
+    .map((ev: any) => `${ev.event_id}:${(ev.all_matches ?? []).filter((m: any) => m.status === 'done').length}`)
+    .join('|');
+
+  useEffect(() => {
+    let alive = true;
+    Promise.all(relevant.map((ev: any) =>
+      apiGetEventStandings(ev.event_id).then((t: any) => [ev.event_id, t]).catch(() => [ev.event_id, null]),
+    )).then(entries => { if (alive) setTables(Object.fromEntries(entries as any)); });
+    return () => { alive = false; };
+  }, [refreshKey]);
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16 }}>
-      <View style={{ borderRadius: 12, borderWidth: 1, borderColor: c.border, overflow: 'hidden' }}>
-        <View style={{ flexDirection: 'row', backgroundColor: c.elevated, padding: 10 }}>
-          {['#', 'Name', 'P', 'W', 'D', 'L', 'PF', 'PA', 'Pts'].map((h, i) => (
-            <Text key={h} style={{ fontSize: 10, fontWeight: '800', color: c.muted, flex: i === 1 ? 3 : 1, textAlign: i > 1 ? 'center' : 'left' }}>{h}</Text>
-          ))}
+      {relevant.map((ev: any) => (
+        <View key={ev.event_id} style={{ marginBottom: 28 }}>
+          {relevant.length > 1 && (
+            <Text style={{ fontSize: 12, fontWeight: '800', color: c.ink, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>{ev.name}</Text>
+          )}
+          {tables[ev.event_id]
+            ? <StandingsTable groups={tables[ev.event_id].groups} sportKey={tables[ev.event_id].sport_key ?? ev.sport_key} />
+            : <ActivityIndicator color={c.primary} style={{ marginTop: 16 }} />}
         </View>
-        {rows.map((r, i) => (
-          <View key={String(r.id)} style={{ flexDirection: 'row', padding: 10, borderTopWidth: 1, borderTopColor: c.border }}>
-            <Text style={[std.cell, { color: c.muted, flex: 1 }]}>{i + 1}</Text>
-            <Text style={[std.cell, { color: c.ink, flex: 3, fontWeight: '700' }]} numberOfLines={1}>{r.name}</Text>
-            {[r.p, r.w, r.d, r.l, r.sf, r.sa, r.pts].map((v, j) => (
-              <Text key={j} style={[std.cell, { color: j === 6 ? c.primary : c.ink, fontWeight: j === 6 ? '900' : '500' }]}>{v}</Text>
-            ))}
-          </View>
-        ))}
-      </View>
+      ))}
     </ScrollView>
   );
 }
-const std = StyleSheet.create({ cell: { flex: 1, fontSize: 12, textAlign: 'center' } });
 
 // ── Info section ──────────────────────────────────────────────────
 function InfoSection({ info, tournament }: any) {

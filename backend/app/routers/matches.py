@@ -23,6 +23,7 @@ from app.models.tournament import Tournament
 from app.schemas.match import MatchCreate, MatchOut, MatchStatusUpdate
 from app.utils.auth import get_current_user, get_current_user_id
 from app.utils.tournament_access import ensure_role
+from app.utils.match_rules import requires_winner
 from app.sports.registry import get_sport_engine
 
 router = APIRouter()
@@ -113,6 +114,7 @@ def _serialize_match(m: Match) -> dict:
         "event_id":       m.event_id,
         "group_id":       m.group_id,
         "stage":          m.stage,
+        "requires_winner": requires_winner(m.stage),
         "round":          m.round,
         "status":         m.status,
         "table_number":   m.table_number,
@@ -283,6 +285,381 @@ def _advance_winner(match: Match, winner_position: Optional[int], db: Session) -
     if next_match is not None:
         _place_in_match(next_match, winner_id, pos, is_team, db)
 
+    # ── Advance loser to third-place match (semi-finals only) ─
+    if match.stage == "semi" and loser_mp:
+        loser_id = loser_mp.player_id or loser_mp.team_id
+        if loser_id:
+            third = _find_third_place(match, db)
+            if third:
+                _place_in_match(third, loser_id, match_k + 1, is_team, db)
+
+
+def _retract_advancement(match: Match, db: Session) -> None:
+    """
+    Before re-running a finished match (rematch / undo across a set boundary),
+    pull its winner — and for semis, the loser placed in the 3rd-place match —
+    back OUT of the downstream slots. Raises 409 when the downstream match has
+    already started: re-running would silently corrupt the bracket otherwise.
+    """
+    if match.status != "done":
+        return
+
+    # A completed group final feeds the championship via generate-knockout —
+    # re-running it after the championship exists would desync the bracket.
+    if match.group_id is not None and match.stage == "final":
+        championship = db.query(Match).filter(
+            Match.event_id == match.event_id,
+            Match.group_id == None,  # noqa: E711
+        ).count()
+        if championship:
+            raise HTTPException(
+                status_code=409,
+                detail="The championship bracket was already generated from this "
+                       "group's result. Regenerate the championship after changing "
+                       "this match.",
+            )
+        return
+
+    if match.stage in ("third_place", "final", "group", "round_robin"):
+        return
+
+    by_stage = _bracket_stages(match, db)
+    if by_stage is None:
+        return
+
+    winner_mp = next((p for p in match.participants if p.is_winner), None)
+    if not winner_mp:
+        return
+    winner_id = winner_mp.player_id or winner_mp.team_id
+    loser_mp  = next((p for p in match.participants if not p.is_winner), None)
+
+    def _pull(target: Optional[Match], participant_id) -> None:
+        if target is None or participant_id is None:
+            return
+        # Query rows directly — target's already-loaded collections may not
+        # include participants placed via db.add() earlier in this session.
+        placed = next(
+            (p for p in db.query(MatchParticipant)
+                          .filter(MatchParticipant.match_id == target.match_id)
+                          .all()
+             if (p.player_id or p.team_id) == participant_id),
+            None,
+        )
+        if not placed:
+            return
+        target_started = target.status != "scheduled" or any(
+            (s.score_p1 or s.score_p2)
+            for s in db.query(MatchSet).filter(MatchSet.match_id == target.match_id).all()
+        )
+        if target_started:
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot re-run this match: its result already feeds a match "
+                       "that has started. Reset that match first.",
+            )
+        db.delete(placed)
+        if placed in target.participants:
+            target.participants.remove(placed)
+
+    next_match, _pos, _match_k = _next_slot(match, by_stage)
+    _pull(next_match, winner_id)
+    if match.stage == "semi" and loser_mp:
+        _pull(_find_third_place(match, db), loser_mp.player_id or loser_mp.team_id)
+
+
+def _finish_match(match: Match, winner_position: Optional[int], db: Optional[Session] = None):
+    match.status      = "done"
+    match.finished_at = datetime.now(timezone.utc)
+    for p in match.participants:
+        p.is_winner = (p.position == winner_position) if winner_position else False
+    if db is not None:
+        _advance_winner(match, winner_position, db)
+
+
+# ── WebSocket push helper ─────────────────────────────────────
+
+# Debounce state: track the last push timestamp per tournament slug
+# so that rapid score updates (e.g. cricket ball-by-ball) only trigger
+# one full tournament-page rebuild per debounce window.
+_ws_last_push: dict = {}
+_ws_trailing: set = set()      # slugs with a trailing push already waiting
+_ws_push_lock  = threading.Lock()
+_WS_DEBOUNCE_SECS = 0.3
+
+
+def _debounce_ws_push(slug: str) -> bool:
+    """
+    Rate-limit tournament-page rebuilds to one per _WS_DEBOUNCE_SECS per slug
+    WITHOUT dropping the trailing update: a call landing inside the window
+    waits out the remainder and then proceeds. (The old behaviour returned
+    early, so the LAST update of a burst — e.g. the winning point — could
+    stay invisible to WS clients until the next score change.)
+
+    Returns True when the caller should build + push, False when another
+    waiting call already covers this update.
+    """
+    now = time.monotonic()
+    with _ws_push_lock:
+        wait = _WS_DEBOUNCE_SECS - (now - _ws_last_push.get(slug, 0.0))
+        if wait <= 0:
+            _ws_last_push[slug] = now
+            return True
+        if slug in _ws_trailing:
+            return False           # a trailing push is already scheduled
+        _ws_trailing.add(slug)
+    time.sleep(wait)               # we're on a background-task thread
+    with _ws_push_lock:
+        _ws_trailing.discard(slug)
+        _ws_last_push[slug] = time.monotonic()
+    return True
+
+
+def _push_ws_update(event_id: int) -> None:
+    """
+    Background task — called after any score-changing commit.
+    Opens a fresh DB session, builds the tournament payload, and pushes
+    it to all WS clients currently watching that tournament.
+    Also updates the HTTP page cache so polling clients immediately see
+    fresh data without waiting for the next cache TTL expiry.
+    Debounced: skips the rebuild if the same slug was pushed < 300 ms ago.
+    """
+    from app.database import SessionLocal
+    from app.models.event import Event as _Event
+    from app.ws.manager import manager
+    from app.routers.public import _build_tournament_page_data, _set_t_page_cache
+    from app.routers.tournaments import invalidate_standings_cache
+    from sqlalchemy.orm import joinedload as _jl
+
+    # Scores changed → cached standings for this event are stale. Do this
+    # before any early return (debounce / no watchers) so polling clients
+    # get fresh standings even when nobody is on the WebSocket.
+    invalidate_standings_cache(event_id)
+
+    db = SessionLocal()
+    try:
+        event = (
+            db.query(_Event)
+            .filter(_Event.event_id == event_id)
+            .options(_jl(_Event.tournament))
+            .first()
+        )
+        if not event or not event.tournament:
+            return
+        slug = event.tournament.slug
+        if not manager.has_watchers(slug):
+            return
+
+        # Debounce with a guaranteed trailing push — never drops the last update
+        if not _debounce_ws_push(slug):
+            return
+
+        # Build fresh data (bypasses HTTP cache) and push to WS clients.
+        # Also warm the HTTP cache so polling clients get the new data immediately.
+        data = _build_tournament_page_data(slug, db)
+        _set_t_page_cache(slug, data)
+        manager.push(slug, data)
+    except Exception as exc:
+        import logging as _log
+        _log.getLogger(__name__).warning("WS push failed: %s", exc)
+    finally:
+        db.close()
+
+
+# ── Routes ────────────────────────────────────────────────────
+
+@router.get("/matches/{match_id}")
+def get_match(
+    match_id: int,
+    db: Session = Depends(get_db),
+    _uid: int = Depends(get_current_user_id),
+):
+    """
+    Single-match fetch for the scorer screen.
+    Returns the match data + the event's sport_config so the scorer doesn't
+    have to load the entire workspace just to get one match.
+    """
+    match = _load_match(match_id, db)      # joinedloads participants + sets + event
+    data  = _serialize_match(match)
+    data["sport_config"] = match.event.sport_config
+    data["sport_key"]    = match.event.sport_key
+    data["event_id"]     = match.event_id
+    return data
+
+
+@router.get("/events/{event_id}/matches")
+def get_matches(
+    event_id: int,
+    db: Session = Depends(get_db),
+    _uid: int = Depends(get_current_user_id),
+):
+    matches = (
+        db.query(Match)
+        .filter(Match.event_id == event_id)
+        .options(
+            joinedload(Match.participants).joinedload(MatchParticipant.player),
+            joinedload(Match.participants).joinedload(MatchParticipant.team),
+            joinedload(Match.sets),
+        )
+        .order_by(Match.stage, Match.round, Match.match_id)
+        .all()
+    )
+    return [_serialize_match(m) for m in matches]
+
+
+@router.post("/events/{event_id}/matches")
+def create_match(
+    event_id: int,
+    data: MatchCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    event = db.query(Event).filter(Event.event_id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    _check_event_access(event, user, db)
+
+    engine    = get_sport_engine(event.sport_key)
+    use_teams = event.participant_type in ("team", "doubles_pair")
+
+    # Resolve participant IDs (partial allowed — e.g. bye player in one slot)
+    if use_teams:
+        t1_id, t2_id = data.team1_id, data.team2_id
+        p1_id = p2_id = None
+        if t1_id and t2_id and t1_id == t2_id:
+            raise HTTPException(status_code=400, detail="A team cannot play themselves")
+        for tid in [t for t in [t1_id, t2_id] if t]:
+            if not db.query(Team).filter(Team.team_id == tid).first():
+                raise HTTPException(status_code=404, detail=f"Team {tid} not found")
+    else:
+        p1_id, p2_id = data.player1_id, data.player2_id
+        t1_id = t2_id = None
+        if p1_id and p2_id and p1_id == p2_id:
+            raise HTTPException(status_code=400, detail="A player cannot play themselves")
+        for pid in [p for p in [p1_id, p2_id] if p]:
+            if not db.query(Player).filter(Player.player_id == pid).first():
+                raise HTTPException(status_code=404, detail=f"Player {pid} not found")
+
+    # Initialise live_state with sets_to_win so the scoring endpoint always
+    # finds a configured value (mirrors what generate_fixtures does).
+    default_stw = (event.sport_config or engine.get_default_config()).get("sets_to_win", 2)
+
+    match = Match(
+        event_id=event_id,
+        group_id=data.group_id,
+        round=data.round,
+        stage=data.stage,
+        status="scheduled",
+        table_number=data.table_number,
+        live_state={"sets_to_win": default_stw},
+    )
+    db.add(match)
+    db.flush()
+
+    # Add participants for every non-null slot (supports TBD matches and
+    # half-filled matches where one side is a bye player).
+    if use_teams:
+        if t1_id:
+            db.add(MatchParticipant(match_id=match.match_id, team_id=t1_id, position=1))
+        if t2_id:
+            db.add(MatchParticipant(match_id=match.match_id, team_id=t2_id, position=2))
+    else:
+        if p1_id:
+            db.add(MatchParticipant(match_id=match.match_id, player_id=p1_id, position=1))
+        if p2_id:
+            db.add(MatchParticipant(match_id=match.match_id, player_id=p2_id, position=2))
+
+    # Create the initial set for set-based sports (TT, Badminton).
+    # Use the same detection as generate_fixtures: check_set_winner presence.
+    if hasattr(engine, "check_set_winner"):
+        db.add(MatchSet(match_id=match.match_id, set_number=1))
+
+    db.commit()
+    return _serialize_match(_load_match(match.match_id, db))
+
+
+@router.patch("/matches/{match_id}/status")
+def update_match_status(
+    match_id: int,
+    data: MatchStatusUpdate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    match = _load_match(match_id, db)
+    _check_event_access(match.event, user, db)
+    if data.status not in ("scheduled", "live"):
+        raise HTTPException(
+            status_code=400,
+            detail="status must be 'scheduled' or 'live' - matches are completed via finish / walkover / scoring",
+        )
+    if match.status == "done":
+        raise HTTPException(status_code=409, detail="This match is finished. Use Rematch to change its result.")
+    if data.status == "live" and len(match.participants) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Both participants must be assigned before the match can go live",
+        )
+    event_id = match.event_id
+    match.status = data.status
+    if data.table_number is not None:
+        match.table_number = data.table_number
+    if data.sets_to_win is not None:
+        allowed = getattr(get_sport_engine(match.event.sport_key), "valid_sets_to_win", None)
+        if allowed is None or data.sets_to_win not in allowed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"sets_to_win must be one of {list(allowed) if allowed else 'n/a for this sport'}",
+            )
+        ls = dict(match.live_state or {})
+        ls["sets_to_win"] = data.sets_to_win
+        match.live_state = ls
+    if data.status == "live" and not match.started_at:
+        match.started_at = datetime.now(timezone.utc)
+    elif data.status == "done" and not match.finished_at:
+        match.finished_at = datetime.now(timezone.utc)
+    # Serialize from the in-memory object (avoids a second SELECT after commit)
+    db.flush()
+    result = _serialize_match(match)
+    db.commit()
+    background_tasks.add_task(_push_ws_update, event_id)
+    return result
+
+
+@router.patch("/matches/{match_id}/score")
+def update_score(
+    match_id: int,
+    data: ScoreUpdate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    match    = _load_match(match_id, db)   # includes match.event via joinedload
+    _check_event_access(match.event, user, db)
+    if len(match.participants) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Both participants must be assigned before this match can be scored",
+        )
+    if match.status == "done":
+        raise HTTPException(status_code=409, detail="This match is finished. Use Rematch to change its result.")
+    event_id = match.event_id
+    event    = match.event                 # no extra DB query — already loaded
+    engine   = get_sport_engine(event.sport_key)
+    config = dict(event.sport_config or engine.get_default_config())
+    # Per-match sets_to_win overrides event-wide default (set during fixture generation)
+    if match.live_state and "sets_to_win" in match.live_state:
+        config["sets_to_win"] = match.live_state["sets_to_win"]
+
+    sport = event.sport_key
+
+    try:
+        engine.validate_score(
+            data.score_p1, data.score_p2, config,
+            innings=data.half, balls=data.minute, live_state=match.live_state,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     # ── TABLE TENNIS & BADMINTON (set-based) ──────
     if sport in ("table_tennis", "badminton"):
         if data.current_server is not None:
@@ -364,6 +741,10 @@ def _advance_winner(match: Match, winner_position: Optional[int], db: Session) -
         ls["runs"]    = data.score_p1
         ls["wickets"] = data.score_p2
         ls["balls"]   = balls
+        # Per-innings record (kept after the live counters reset) - net run rate needs balls faced.
+        inn_rec = dict(ls.get("innings") or {})
+        inn_rec[str(innings)] = {"runs": data.score_p1, "wickets": data.score_p2, "balls": balls}
+        ls["innings"] = inn_rec
         if data.overs:
             ls["overs"] = data.overs
         if data.cricket_live_state:
@@ -452,6 +833,8 @@ def finish_match(
             status_code=400,
             detail="Both participants must be assigned before this match can be finished",
         )
+    if match.status == "done":
+        raise HTTPException(status_code=409, detail="This match is finished. Use Rematch to change its result.")
     event_id = match.event_id
     event    = match.event                 # no extra DB query
     engine   = get_sport_engine(event.sport_key)
@@ -523,6 +906,11 @@ def finish_match(
                 winner = 3 - first_of_pair_pos
             else:
                 winner = None  # still tied
+            if winner is None and requires_winner(match.stage):
+                raise HTTPException(
+                    status_code=400,
+                    detail="A knockout match cannot end tied — play a super over (or pick a winner).",
+                )
             _finish_match(match, winner, db)
 
         elif n % 2 == 1:
@@ -538,8 +926,6 @@ def finish_match(
 
     # ── FOOTBALL ─────────────────────────────────────────────
     elif event.sport_key == "football":
-        # Use explicit winner when provided (e.g. from penalties).
-        # Fall back to goal calculation only when winner_position is not set.
         if isinstance(data.winner_position, int):
             winner = data.winner_position
         elif match.sets:
@@ -548,9 +934,7 @@ def finish_match(
         else:
             winner = None
 
-        # Knockout matches can never end level — a drawn result must be settled
-        # (extra time / penalties) before the match can be finished.
-        if winner is None and match.stage not in (None, "group"):
+        if winner is None and requires_winner(match.stage):
             raise HTTPException(
                 status_code=400,
                 detail="A knockout match cannot end in a draw — settle it with extra time or penalties.",
@@ -670,21 +1054,22 @@ def undo_set(
     if not sets:
         raise HTTPException(status_code=400, detail="No sets to undo")
 
+    if match.status == "done":
+        # Reopen a finished match. Pull the already-propagated winner out of
+        # the next bracket slot first (409 if that match has started).
+        _retract_advancement(match, db)
+        match.status      = "live"
+        match.finished_at = None
+        for p in match.participants:
+            p.is_winner = False
+
     current = sets[-1]
     if current.score_p1 == 0 and current.score_p2 == 0 and len(sets) > 1:
-        if match.status == "done":
-            # Pull the already-propagated winner out of the next bracket slot
-            # (raises 409 if that match has started — prevents silent corruption)
-            _retract_advancement(match, db)
         db.delete(current)
+        match.sets.remove(current)   # keep the in-memory list in sync for the response
         prev = sets[-2]
         prev.is_complete     = False
         prev.winner_position = None
-        if match.status == "done":
-            match.status      = "live"
-            match.finished_at = None
-            for p in match.participants:
-                p.is_winner = False
     else:
         current.score_p1        = 0
         current.score_p2        = 0
@@ -754,6 +1139,9 @@ def delete_match(
 ):
     match = _load_match(match_id, db)
     _check_event_access(match.event, user, db)
+    # A finished bracket match has already fed its winner into the next round:
+    # pull it back out (409 if that match has started) before deleting.
+    _retract_advancement(match, db)
     db.delete(match)
     db.commit()
     return {"ok": True}
