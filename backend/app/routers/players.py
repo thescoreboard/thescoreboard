@@ -25,7 +25,7 @@ def _check_org_member(org_id: int, user: User, db: Session) -> None:
     """Raise 403 unless the caller may use this org's player pool: org
     members, superadmins, and members of any tournament owned by the org
     (tournament staff need to register players)."""
-    require_org_access(org_id, user, db, allow_tournament_members=True)
+    require_org_access(org_id, user, db)
 
 
 @router.post("/", response_model=PlayerOut)

@@ -32,8 +32,8 @@ router = APIRouter()
 
 # ── Helpers ───────────────────────────────────────────────────
 # Authorization lives in app.utils.tournament_access. Membership in the
-# owning org OR a TournamentMember row grants access; "admin" is required
-# for the danger zone (publish/delete/members), "staff" for everything else.
+# owning org grants access; "admin" is required
+# for the danger zone (publish/delete).
 
 def _check_org_access(org_id: int, user: User, db: Session):
     """Org-only check — used where per-tournament roles don't apply
@@ -114,9 +114,11 @@ def create_tournament(
         raise HTTPException(status_code=404, detail="Organization not found")
 
     name = clean_name(data.name, "Tournament name")
+    if len(data.events) != 1:
+        raise HTTPException(status_code=400, detail="A tournament has exactly one sport.")
     for ev_input in data.events:
         clean_name(ev_input.name, "Event name")
-        check_format(ev_input.format, required=not data.is_multi_sport)
+        check_format(ev_input.format, required=True)
         check_participant_type(ev_input.participant_type)
 
     slug = generate_unique_slug(
@@ -133,7 +135,6 @@ def create_tournament(
         state=data.state,
         venue_lat=data.venue_lat,
         venue_lng=data.venue_lng,
-        is_multi_sport=data.is_multi_sport,
         is_published=data.is_published,
         primary_color=data.primary_color,
         status="draft",
@@ -147,22 +148,15 @@ def create_tournament(
         except KeyError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        if data.is_multi_sport:
-            # Multi-sport: store a clean shell — no defaults injected.
-            # The organiser completes per-sport setup from the dashboard.
-            config        = None
-            is_configured = False
-            event_format  = None          # set during setup wizard
-        else:
-            # Single-sport: apply engine defaults + any provided overrides now.
-            config = engine.get_default_config()
-            if ev_input.sport_config:
-                try:
-                    config = engine.validate_config({**config, **ev_input.sport_config})
-                except ValueError as e:
-                    raise HTTPException(status_code=400, detail=str(e))
-            is_configured = True
-            event_format  = ev_input.format  # validated non-null by creation wizard
+        # Apply engine defaults + any provided overrides now.
+        config = engine.get_default_config()
+        if ev_input.sport_config:
+            try:
+                config = engine.validate_config({**config, **ev_input.sport_config})
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+        is_configured = True
+        event_format  = ev_input.format  # validated non-null above
 
         participant_type = ev_input.participant_type or "individual"
 
@@ -354,7 +348,6 @@ def get_workspace(
             "name":           t.name,
             "slug":           t.slug,
             "description":    t.description,
-            "is_multi_sport": t.is_multi_sport,
             "venue":          t.venue,
             "city":           t.city,
             "state":          t.state,
@@ -441,6 +434,8 @@ def update_tournament(
 
     db.commit()
     db.refresh(t)
+    from app.routers.public import invalidate_public_caches
+    invalidate_public_caches(t.slug)
     return t
 
 
@@ -456,8 +451,11 @@ def delete_tournament(
     t = _check_tournament_access(tournament_id, user, db, min_role=ROLE_ADMIN)
     if t.org_id != org_id:
         raise HTTPException(status_code=404, detail="Tournament not found")
+    slug = t.slug
     db.delete(t)
     db.commit()
+    from app.routers.public import invalidate_public_caches
+    invalidate_public_caches(slug)
     return {"ok": True}
 
 
@@ -547,7 +545,7 @@ def transition_status(
     # Just 3 states. Registration availability is a separate, date-driven
     # concern (Tournament.registration_open) — NOT part of this lifecycle.
     _ALLOWED_TRANSITIONS = {
-        "draft":     {"live"},
+        "draft":     {"live", "completed"},
         "live":      {"completed", "draft"},   # draft = unpublish, e.g. published too early by mistake
         "completed": {"live"},                  # reopen, e.g. marked done by mistake
     }
@@ -576,11 +574,10 @@ def transition_status(
 
     t.status = target_status
 
-    # Auto-publish when going live
-    if target_status == "live":
-        t.is_published = True
-
+    # Visibility is controlled only by the public/private toggle (is_published).
     db.commit()
+    from app.routers.public import invalidate_public_caches
+    invalidate_public_caches(t.slug)
     return {"ok": True, "status": t.status}
 
 

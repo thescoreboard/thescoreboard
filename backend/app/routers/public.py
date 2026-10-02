@@ -48,6 +48,14 @@ def _set_t_page_cache(slug: str, data: dict) -> None:
     _t_page_cache[slug] = {"data": data, "ts": time.time()}
 
 
+def invalidate_public_caches(slug: str | None = None) -> None:
+    """Drop the homepage cache and (optionally) one tournament page, e.g. after a
+    public/private toggle, so the change shows up immediately."""
+    _homepage_cache["data"] = None
+    if slug:
+        _t_page_cache.pop(slug, None)
+
+
 def invalidate_tournament_cache(slug: str) -> None:
     """Called by the WS push task so the next HTTP poll sees fresh data."""
     _t_page_cache.pop(slug, None)
@@ -308,7 +316,7 @@ def homepage_data(
 
     query = (
         db.query(Tournament)
-        .filter(Tournament.is_active == True)
+        .filter(Tournament.is_active == True, Tournament.is_published == True)
         .options(
             joinedload(Tournament.events),
             joinedload(Tournament.organization),
@@ -400,7 +408,7 @@ def sport_page_data(
 
     query = (
         db.query(Tournament)
-        .filter(Tournament.tournament_id.in_(t_ids), Tournament.is_active == True)
+        .filter(Tournament.tournament_id.in_(t_ids), Tournament.is_active == True, Tournament.is_published == True)
         .options(joinedload(Tournament.events), joinedload(Tournament.organization))
     )
 
@@ -452,7 +460,7 @@ def browse_tournaments(
     """
     query = (
         db.query(Tournament)
-        .filter(Tournament.is_active == True)
+        .filter(Tournament.is_active == True, Tournament.is_published == True)
         .options(joinedload(Tournament.events), joinedload(Tournament.organization))
         .order_by(Tournament.created_at.desc())
     )
@@ -812,7 +820,7 @@ def search(q: str, db: Session = Depends(get_db)):
     tournaments = (
         db.query(Tournament)
         .filter(
-            Tournament.is_active == True,
+            Tournament.is_active == True, Tournament.is_published == True,
             or_(
                 Tournament.name.ilike(f"%{q}%"),
                 Tournament.city.ilike(f"%{q}%"),
@@ -843,7 +851,7 @@ def public_register(
     """Public registration — no auth required. Creates player + enrolls in events."""
     tournament = db.query(Tournament).filter(
         Tournament.tournament_id == tournament_id,
-        Tournament.is_active == True,
+        Tournament.is_active == True, Tournament.is_published == True,
     ).first()
     if not tournament:
         raise HTTPException(status_code=404, detail="Tournament not found")
@@ -911,36 +919,3 @@ def public_register(
         "message":        f"Successfully registered for {tournament.name}",
     }
 
-# ── Tournament invite info (pre-accept preview) ───────────────────────────────
-
-@router.get("/invites/{token}")
-def get_invite_info(token: str, db: Session = Depends(get_db)):
-    """Public preview of an invite link — shown before login/accept so the
-    recipient knows what they're joining. Never exposes more than the
-    tournament name, org name, granted role, and inviter's first name."""
-    from app.models.tournament_member import TournamentInvite
-    from app.models.user import User
-    from app.routers.tournament_members import _invite_state
-
-    invite = db.query(TournamentInvite).filter(TournamentInvite.token == token).first()
-    if not invite:
-        return {"valid": False, "reason": "not_found"}
-    state = _invite_state(invite)
-    if state:
-        return {"valid": False, "reason": state}
-
-    t = db.query(Tournament).filter(
-        Tournament.tournament_id == invite.tournament_id).first()
-    if not t:
-        return {"valid": False, "reason": "not_found"}
-
-    inviter = db.query(User).filter(User.user_id == invite.created_by).first() if invite.created_by else None
-    org = t.organization
-
-    return {
-        "valid": True,
-        "tournament_name": t.name,
-        "org_name": org.name if org else None,
-        "role": invite.role,
-        "inviter_name": inviter.name if inviter else None,
-    }

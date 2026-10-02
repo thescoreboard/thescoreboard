@@ -97,7 +97,7 @@ def create_team(
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
 
-    require_org_access(org_id, user, db, allow_tournament_members=True)
+    require_org_access(org_id, user, db)
 
     team = Team(
         org_id=org_id,
@@ -133,7 +133,7 @@ def list_org_teams(
     user: User = Depends(get_current_user),
 ):
     # SEC-5: team rosters include contact phone numbers — restrict to org access
-    require_org_access(org_id, user, db, allow_tournament_members=True)
+    require_org_access(org_id, user, db)
     query = db.query(Team).filter(Team.org_id == org_id).options(joinedload(Team.members))
     if sport_key:
         query = query.filter(Team.sport_key == sport_key)
@@ -152,7 +152,7 @@ def delete_team(
         raise HTTPException(status_code=404, detail="Team not found")
     # SEC-4: verify the caller may manage this org's teams
     if team.org_id:
-        require_org_access(team.org_id, user, db, allow_tournament_members=True)
+        require_org_access(team.org_id, user, db)
     elif not user.is_superadmin:
         # Orphaned team (its org was deleted) - nobody owns it.
         raise HTTPException(status_code=403, detail="Not authorized to delete this team")

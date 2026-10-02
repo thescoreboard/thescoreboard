@@ -17,7 +17,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base
 # Import every model module so Base.metadata knows all tables
-from app.models import user, organization, tournament, tournament_member, event, group, player, match  # noqa: F401
+from app.models import user, organization, tournament, event, group, player, match  # noqa: F401
 
 
 @pytest.fixture()

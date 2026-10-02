@@ -4,13 +4,8 @@ on a tournament and everything under it (events, matches, participants).
 
 Role resolution (highest wins):
   superadmin                          -> "admin"
-  OrgMember of the owning org         -> "admin"   (implicit permanent owner)
-  TournamentMember row                -> its role ("admin" | "staff")
+  OrgMember of the owning org         -> "admin"   (owner)
   otherwise                           -> None (no access)
-
-"staff" covers day-to-day organising (players, fixtures, scoring, info
-edits); "admin" additionally covers the danger zone (publish/complete/
-delete, member management).
 """
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -18,7 +13,6 @@ from sqlalchemy.orm import Session
 from app.models.user import User
 from app.models.organization import OrgMember
 from app.models.tournament import Tournament
-from app.models.tournament_member import TournamentMember
 from app.models.event import Event
 
 ROLE_ADMIN = "admin"
@@ -34,11 +28,6 @@ def get_tournament_role(t: Tournament, user: User, db: Session) -> str | None:
         OrgMember.org_id == t.org_id, OrgMember.user_id == user.user_id).first()
     if org_member:
         return ROLE_ADMIN
-    member = db.query(TournamentMember).filter(
-        TournamentMember.tournament_id == t.tournament_id,
-        TournamentMember.user_id == user.user_id).first()
-    if member:
-        return member.role if member.role in _RANK else ROLE_STAFF
     return None
 
 
@@ -75,24 +64,13 @@ def require_event_access(
 
 
 def require_org_access(
-    org_id: int, user: User, db: Session, allow_tournament_members: bool = False,
+    org_id: int, user: User, db: Session,
 ) -> None:
-    """Org-scoped resources (player/team pools). Org members and superadmins
-    always pass; with allow_tournament_members=True, members of ANY tournament
-    owned by the org also pass (tournament staff need the org's player pool)."""
+    """Org-scoped resources (player/team pools). Org members and superadmins pass."""
     if user.is_superadmin:
         return
     member = db.query(OrgMember).filter(
         OrgMember.org_id == org_id, OrgMember.user_id == user.user_id).first()
     if member:
         return
-    if allow_tournament_members:
-        tm = (
-            db.query(TournamentMember)
-            .join(Tournament, Tournament.tournament_id == TournamentMember.tournament_id)
-            .filter(Tournament.org_id == org_id, TournamentMember.user_id == user.user_id)
-            .first()
-        )
-        if tm:
-            return
     raise HTTPException(status_code=403, detail="Not authorized for this organization")

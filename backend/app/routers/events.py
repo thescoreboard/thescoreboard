@@ -152,8 +152,7 @@ def configure_event(
     """
     Save (or re-save) the sport-specific configuration for one event.
 
-    This is the endpoint called by the setup wizard shown in the dashboard
-    when organiser opens an unconfigured multi-sport event for the first time.
+    Called from the event workspace when the organiser edits format / sport settings.
 
     Edit lock rules
     ---------------

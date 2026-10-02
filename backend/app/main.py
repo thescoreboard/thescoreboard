@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from app.config import settings
 from app.database import engine, Base
-from app.routers import auth, organizations, tournaments, tournament_members, events, players, matches, public, teams, media, share, ws as ws_router, dashboard, admin
+from app.routers import auth, organizations, tournaments, events, players, matches, public, teams, media, share, ws as ws_router, dashboard, admin
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -112,9 +112,6 @@ app.include_router(public.router,        prefix="/api/public",  tags=["public"])
 app.include_router(dashboard.router,     prefix="/api/dashboard", tags=["dashboard"])
 app.include_router(auth.router,          prefix="/api/auth",    tags=["auth"])
 app.include_router(organizations.router, prefix="/api/orgs",    tags=["organizations"])
-# Members/invites BEFORE the tournaments routers: its concrete
-# /tournaments/{id}/members paths must win over wildcard overlaps.
-app.include_router(tournament_members.router, prefix="/api",    tags=["tournament-members"])
 app.include_router(tournaments.router,   prefix="/api/orgs",    tags=["tournaments"])
 app.include_router(tournaments.router,   prefix="/api",         tags=["tournaments"])
 app.include_router(events.router,        prefix="/api",         tags=["events"])

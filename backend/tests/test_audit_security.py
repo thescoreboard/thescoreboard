@@ -97,7 +97,12 @@ def test_draft_tournament_not_public_until_published(world):
     c, A, B, org_a, org_b, tour = world
     t, eid = tour(A, org_a)
     assert c.get(f"/api/public/t/{t['slug']}").status_code == 404
-    assert c.post(f"/api/orgs/tournaments/{t['tournament_id']}/transition?target_status=live", headers=A).status_code == 200
+    assert c.get("/api/public/home").json()["sports"] == []
+    assert c.patch(f"/api/orgs/{org_a}/tournaments/{t['tournament_id']}", json={"is_published": True}, headers=A).status_code == 200
+    assert [x["sport_key"] for x in c.get("/api/public/home").json()["sports"]] != []
+    assert c.patch(f"/api/orgs/{org_a}/tournaments/{t['tournament_id']}", json={"is_published": False}, headers=A).status_code == 200
+    assert c.get(f"/api/public/t/{t['slug']}").status_code == 404
+    assert c.patch(f"/api/orgs/{org_a}/tournaments/{t['tournament_id']}", json={"is_published": True}, headers=A).status_code == 200
     assert c.get(f"/api/public/t/{t['slug']}").status_code == 200
 
 
