@@ -15,8 +15,9 @@ from app.models.group import EventParticipant, Group
 from app.models.organization import Organization
 from app.models.event import Event
 from app.models.tournament import Tournament
-from app.utils.auth import get_current_user
-from app.utils.tournament_access import require_org_access, require_event_access
+from app.utils.auth import get_current_user, get_optional_user
+from app.utils.event_rules import event_has_fixtures, ensure_entries_open, ensure_can_remove_participant, entries_locked
+from app.utils.tournament_access import require_org_access, require_event_access, get_tournament_role
 from app.utils.ratelimit import public_registration_limiter
 
 router = APIRouter()
@@ -57,13 +58,15 @@ class TeamOut(BaseModel):
         from_attributes = True
 
 
-def _serialize_team(team: Team) -> dict:
+def _serialize_team(team: Team, public: bool = False) -> dict:
+    """public=True strips contact details and member age/gender (shown to
+    non-staff callers on the public roster)."""
     return {
         "team_id":       team.team_id,
         "name":          team.name,
         "sport_key":     team.sport_key,
-        "contact_name":  team.contact_name,
-        "contact_phone": team.contact_phone,
+        "contact_name":  None if public else team.contact_name,
+        "contact_phone": None if public else team.contact_phone,
         "seed_level":    team.seed_level,
         "member_count":  len(team.members),
         "members": [
@@ -72,8 +75,8 @@ def _serialize_team(team: Team) -> dict:
                 "name":          m.name,
                 "role":          m.role,
                 "jersey_number": m.jersey_number,
-                "age":           m.age,
-                "gender":        m.gender,
+                "age":           None if public else m.age,
+                "gender":        None if public else m.gender,
             }
             for m in sorted(team.members, key=lambda x: (x.role != "captain", x.role != "vice_captain", x.tm_id))
         ],
@@ -94,7 +97,7 @@ def create_team(
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
 
-    require_org_access(org_id, user, db, allow_tournament_members=True)
+    require_org_access(org_id, user, db)
 
     team = Team(
         org_id=org_id,
@@ -130,7 +133,7 @@ def list_org_teams(
     user: User = Depends(get_current_user),
 ):
     # SEC-5: team rosters include contact phone numbers — restrict to org access
-    require_org_access(org_id, user, db, allow_tournament_members=True)
+    require_org_access(org_id, user, db)
     query = db.query(Team).filter(Team.org_id == org_id).options(joinedload(Team.members))
     if sport_key:
         query = query.filter(Team.sport_key == sport_key)
@@ -149,7 +152,10 @@ def delete_team(
         raise HTTPException(status_code=404, detail="Team not found")
     # SEC-4: verify the caller may manage this org's teams
     if team.org_id:
-        require_org_access(team.org_id, user, db, allow_tournament_members=True)
+        require_org_access(team.org_id, user, db)
+    elif not user.is_superadmin:
+        # Orphaned team (its org was deleted) - nobody owns it.
+        raise HTTPException(status_code=403, detail="Not authorized to delete this team")
     # DI-3: refuse to hard-delete a team with match history (match_participants
     # FK is ON DELETE CASCADE — deleting would corrupt completed matches).
     from app.models.match import MatchParticipant
@@ -178,7 +184,9 @@ def add_team_to_event(
 ):
     """Enroll an existing team in an event."""
     # SEC-6: enrolling mutates the event — require tournament access
-    event, _, _ = require_event_access(event_id, user, db)
+    event, tournament, _ = require_event_access(event_id, user, db)
+
+    ensure_entries_open(event, db)
 
     # Accept both "team" and "doubles_pair" — doubles_pair is stored as "team"
     # but old events created before the fix may still have "doubles_pair" in the DB
@@ -189,6 +197,16 @@ def add_team_to_event(
                    f"Event participant_type is '{event.participant_type}'."
         )
 
+    team = db.query(Team).filter(Team.team_id == team_id).first()
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+    if team.org_id != tournament.org_id:
+        raise HTTPException(status_code=403, detail="This team belongs to a different organization")
+    if group_id is not None and not db.query(Group).filter(
+        Group.group_id == group_id, Group.event_id == event_id
+    ).first():
+        raise HTTPException(status_code=404, detail="Group not found in this event")
+
     existing = db.query(EventParticipant).filter(
         EventParticipant.event_id == event_id,
         EventParticipant.team_id == team_id,
@@ -197,7 +215,6 @@ def add_team_to_event(
         raise HTTPException(status_code=400, detail="Team already enrolled in this event")
 
     # Auto-compute seed score from team's seed_level
-    team = db.query(Team).filter(Team.team_id == team_id).first()
     seed = None
     if team and team.seed_level:
         seed = SEED_SCORES.get(team.seed_level.lower())
@@ -230,6 +247,8 @@ def assign_team_group(
         ).first()
         if not group:
             raise HTTPException(status_code=404, detail="Group not found in this event")
+    if group_id != ep.group_id and event_has_fixtures(event_id, db):
+        raise HTTPException(status_code=409, detail="Groups are locked once fixtures have been generated.")
     ep.group_id = group_id
     db.commit()
     return {"ok": True}
@@ -249,14 +268,25 @@ def remove_team_from_event(
     ).first()
     if not ep:
         raise HTTPException(status_code=404, detail="Team not in this event")
+    ensure_can_remove_participant(event_id, team_id=team_id, db=db)
     db.delete(ep)
     db.commit()
     return {"ok": True}
 
 
 @router.get("/events/{event_id}/teams")
-def get_event_teams(event_id: int, db: Session = Depends(get_db)):
-    """Public — list all teams enrolled in an event."""
+def get_event_teams(
+    event_id: int,
+    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_optional_user),
+):
+    """List all teams enrolled in an event. Contact details and member
+    age/gender are only included for tournament staff; the public sees names."""
+    event = db.query(Event).filter(Event.event_id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    t = db.query(Tournament).filter(Tournament.tournament_id == event.tournament_id).first()
+    is_staff = bool(user and t and get_tournament_role(t, user, db))
     eps = (
         db.query(EventParticipant)
         .filter(EventParticipant.event_id == event_id, EventParticipant.team_id.isnot(None))
@@ -267,7 +297,7 @@ def get_event_teams(event_id: int, db: Session = Depends(get_db)):
         {
             "ep_id":    ep.ep_id,
             "group_id": ep.group_id,
-            "team":     _serialize_team(ep.team) if ep.team else None,
+            "team":     _serialize_team(ep.team, public=not is_staff) if ep.team else None,
         }
         for ep in eps
     ]
@@ -338,8 +368,9 @@ def public_register_team(
             Event.participant_type.in_(["team", "doubles_pair"]),
         ).all()
 
+    target_events = [e for e in target_events if not entries_locked(e, db)]
     if not target_events:
-        raise HTTPException(status_code=400, detail="No matching events found in this tournament")
+        raise HTTPException(status_code=400, detail="Entries are closed for the selected event(s)")
 
     # ── Doubles-specific validation: exactly 2 members per pair
     doubles_events = [e for e in target_events if e.participant_type == "doubles_pair"]

@@ -6,6 +6,7 @@ import threading
 import time
 
 os.environ["DATABASE_URL"] = "sqlite://"
+os.environ["SKIP_MIGRATIONS"] = "1"
 
 from app.routers import matches as m
 

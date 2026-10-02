@@ -40,7 +40,7 @@ class EventOut(BaseModel):
     tournament_id: int
     name: str
     sport_key: str
-    format: Optional[str]           # nullable for unconfigured multi-sport events
+    format: Optional[str]
     participant_type: str
     sport_config: Optional[dict]
     status: str

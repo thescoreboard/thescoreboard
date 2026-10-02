@@ -102,3 +102,20 @@ def require_pro(user: User = Depends(get_current_user)) -> User:
     if user.plan != "pro":
         raise HTTPException(status_code=403, detail="pro_required")
     return user
+
+def get_optional_user(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+) -> Optional[User]:
+    """Like get_current_user but returns None instead of 401 - for public
+    endpoints that show extra detail to authorised callers."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    try:
+        payload = decode_token(authorization.split(" ", 1)[1])
+        user_id = int(payload.get("sub", 0))
+    except (HTTPException, ValueError, TypeError):
+        return None
+    if not user_id:
+        return None
+    return db.query(User).filter(User.user_id == user_id, User.is_active != False).first()

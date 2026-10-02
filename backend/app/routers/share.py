@@ -191,12 +191,12 @@ def _cached_png(cache_key: str, generate_fn) -> bytes:
 
 @router.get("/t/{slug}", response_class=HTMLResponse)
 def share_tournament(request: Request, slug: str, db: Session = Depends(get_db)):
-    t = db.query(Tournament).filter(Tournament.slug == slug, Tournament.is_active == True).first()
+    t = db.query(Tournament).filter(Tournament.slug == slug, Tournament.is_active == True, Tournament.is_published == True).first()
     if not t:
         raise HTTPException(status_code=404, detail="Tournament not found")
 
     sport_keys = list({e.sport_key for e in t.events if e.is_active})
-    sport_label = SPORT_LABELS.get(sport_keys[0]) if len(sport_keys) == 1 else "Multi-Sport"
+    sport_label = SPORT_LABELS.get(sport_keys[0]) if sport_keys else None
 
     title = t.name
     desc_parts = [p for p in [sport_label, t.city, t.venue] if p]
@@ -217,12 +217,12 @@ def share_tournament(request: Request, slug: str, db: Session = Depends(get_db))
 
 @router.get("/og/tournament/{slug}.png")
 def og_tournament_image(slug: str, db: Session = Depends(get_db)):
-    t = db.query(Tournament).filter(Tournament.slug == slug, Tournament.is_active == True).first()
+    t = db.query(Tournament).filter(Tournament.slug == slug, Tournament.is_active == True, Tournament.is_published == True).first()
     if not t:
         raise HTTPException(status_code=404, detail="Tournament not found")
 
     sport_keys = list({e.sport_key for e in t.events if e.is_active})
-    sport_label = SPORT_LABELS.get(sport_keys[0]) if len(sport_keys) == 1 else "Multi-Sport"
+    sport_label = SPORT_LABELS.get(sport_keys[0]) if sport_keys else None
 
     cache_key = f"tournament/{slug}.png"
 

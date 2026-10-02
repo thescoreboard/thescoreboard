@@ -7,6 +7,7 @@ import os
 from datetime import date, timedelta
 
 os.environ["DATABASE_URL"] = "sqlite://"
+os.environ["SKIP_MIGRATIONS"] = "1"
 
 import pytest
 from fastapi.testclient import TestClient
@@ -50,7 +51,7 @@ def test_registration_closed_while_draft(ctx):
 
 def test_registration_respects_end_date(ctx):
     t = ctx["t"]
-    t.status = "live"
+    t.status = "live"; t.is_published = True
     t.registration_end_date = date.today() - timedelta(days=1)
     assert t.registration_open is False    # deadline passed
     t.registration_end_date = date.today() + timedelta(days=1)
@@ -106,10 +107,10 @@ def test_live_can_revert_to_draft(ctx):
     assert r.json()["status"] == "draft"
 
 
-def test_draft_cannot_jump_to_completed(ctx):
+def test_draft_can_be_completed_directly(ctx):
     client = ctx["client"]
     r = client.post(f"/api/orgs/tournaments/{ctx['t'].tournament_id}/transition?target_status=completed")
-    assert r.status_code == 400
+    assert r.status_code == 200
 
 
 def test_legacy_status_values_are_rejected(ctx):
@@ -126,6 +127,7 @@ def test_legacy_status_values_are_rejected(ctx):
 
 def test_public_register_blocked_when_not_live(ctx):
     client = ctx["client"]
+    ctx["t"].is_published = True; ctx["db"].commit()
     r = client.post(
         f"/api/public/tournaments/{ctx['t'].tournament_id}/register",
         json={"name": "Alice", "phone": "9999999999", "event_ids": []},
@@ -136,7 +138,7 @@ def test_public_register_blocked_when_not_live(ctx):
 
 def test_public_register_blocked_after_deadline(ctx):
     client, t = ctx["client"], ctx["t"]
-    t.status = "live"
+    t.status = "live"; t.is_published = True
     t.registration_end_date = date.today() - timedelta(days=1)
     ctx["db"].commit()
     r = client.post(

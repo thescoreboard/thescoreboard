@@ -11,9 +11,21 @@ All TT-specific rules:
 from typing import Optional
 from app.sports.base import BaseSport
 from app.sports.table_tennis.config import DEFAULT_CONFIG, VALID_SETS_TO_WIN
+from app.sports.set_rules import validate_set_score
 
 
 class TableTennis(BaseSport):
+
+    valid_sets_to_win = VALID_SETS_TO_WIN
+
+    def validate_score(self, score_p1, score_p2, config, **ctx):
+        iw = config.get("instant_win") or {}
+        if iw.get("enabled") and max(score_p1, score_p2) == iw.get("score", 7):
+            return  # house rule: the game may legitimately end at 7-0
+        validate_set_score(
+            score_p1, score_p2,
+            target=config.get("points_per_set", 11), margin=config.get("win_margin", 2),
+        )
 
     def get_default_config(self) -> dict:
         return DEFAULT_CONFIG.copy()

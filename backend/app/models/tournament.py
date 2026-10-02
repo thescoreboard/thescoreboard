@@ -31,9 +31,6 @@ class Tournament(Base):
     slug = Column(String(255), unique=True, nullable=False, index=True)
     description = Column(Text, nullable=True)
 
-    # Single-sport or multi-sport
-    is_multi_sport = Column(Boolean, default=False)
-
     # Dates. start_date / end_date are legacy: the tournament page and API no
     # longer read or write them (columns kept so no destructive migration is
     # needed). Registration availability still uses the two dates below.

@@ -8,6 +8,7 @@ in the environment, so this shields tests from backend/.env.
 import os
 
 os.environ["DATABASE_URL"] = "sqlite://"
+os.environ["SKIP_MIGRATIONS"] = "1"
 
 import pytest
 from sqlalchemy import create_engine
@@ -16,7 +17,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base
 # Import every model module so Base.metadata knows all tables
-from app.models import user, organization, tournament, tournament_member, event, group, player, match  # noqa: F401
+from app.models import user, organization, tournament, event, group, player, match  # noqa: F401
 
 
 @pytest.fixture()
@@ -34,3 +35,13 @@ def db():
     finally:
         session.close()
         engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiters():
+    """Rate limiters are process-global; tests that register several users
+    from the same fake IP must not trip each other's limits."""
+    from app.utils import ratelimit
+    for lim in (ratelimit.login_limiter, ratelimit.register_limiter, ratelimit.public_registration_limiter):
+        lim.reset()
+    yield
