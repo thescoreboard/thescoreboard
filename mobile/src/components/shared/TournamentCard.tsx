@@ -71,11 +71,6 @@ export default function TournamentCard({ tournament: t, onPress }: Props) {
         {t.city && (
           <Text style={[s.metaText, { fontFamily: F.body, color: c.muted }]}>{t.city}</Text>
         )}
-        {t.start_date && (
-          <Text style={[s.metaText, { fontFamily: F.body, color: c.muted }]}>
-            {new Date(t.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-          </Text>
-        )}
       </View>
 
       {/* Stats row */}

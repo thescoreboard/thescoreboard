@@ -411,6 +411,15 @@ export default function StreamScreen() {
             : 'Live streaming uses native camera APIs that aren\'t available in Expo Go. You need to build and install the development APK.'}
         </Text>
 
+        {/* TEMPORARY (spike): dev-only shortcut to the new streaming spike screen. Remove with the old prototype. */}
+        {__DEV__ && (
+          <TouchableOpacity
+            onPress={() => router.push('/stream-spike' as any)}
+            style={{ backgroundColor: '#ef4444', borderRadius: 10, paddingHorizontal: 20, paddingVertical: 14, marginBottom: 20 }}>
+            <Text style={{ color: '#fff', fontWeight: '900' }}>Open livestream spike (dev)</Text>
+          </TouchableOpacity>
+        )}
+
         <View style={{ backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 12, padding: 18, width: '100%', marginBottom: 24 }}>
           <Text style={{ color: C.muted, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
             One-time setup

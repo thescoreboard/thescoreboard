@@ -17,6 +17,7 @@ const Register           = lazy(() => import("./pages/auth/Register"));
 const PrivacyPolicy      = lazy(() => import("./pages/PrivacyPolicy"));
 const Terms              = lazy(() => import("./pages/Terms"));
 const About              = lazy(() => import("./pages/About"));
+const Account            = lazy(() => import("./pages/Account"));
 
 // Admin
 const AdminPanel = lazy(() => import("./pages/admin/AdminPanel"));
@@ -81,6 +82,9 @@ export default function App() {
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms"   element={<Terms />} />
         <Route path="/about"   element={<About />} />
+
+        {/* Account */}
+        <Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />
 
         {/* Organiser */}
         <Route path="/organiser" element={<RequireAuth><OrgDashboard /></RequireAuth>} />

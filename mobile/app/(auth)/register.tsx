@@ -5,7 +5,6 @@ import { useRouter } from 'expo-router';
 import { useTheme } from '../../src/hooks/useTheme';
 import { useAuthStore } from '../../src/store/auth';
 import { apiRegister } from '../../src/api/client';
-import { storage } from '../../src/utils/storage';
 import { F } from '../../src/theme';
 
 export default function RegisterScreen() {
@@ -30,16 +29,7 @@ export default function RegisterScreen() {
       const data = await apiRegister({ name: name.trim(), email: email.trim().toLowerCase(), password, phone: phone.trim()||null });
       await setToken(data.access_token);
 
-      // Consume the CTA intent set before registration; default to 'player' for new accounts
-      const intent = await storage.getItem('tsb_intent');
-      if (intent) await storage.deleteItem('tsb_intent');
-      const { setMode } = useAuthStore.getState();
-      // New accounts have no org role yet, so we always set player mode even if
-      // intent is 'organiser' — they'll be prompted to create an org after onboarding.
-      await setMode((intent as any) || 'player');
-
-      const onboarded = useAuthStore.getState().onboarded;
-      router.replace(!onboarded ? '/onboarding' : '/(tabs)' as any);
+      router.replace('/(tabs)' as any);
     } catch (e: any) { setError(e.message ?? 'Registration failed'); }
     setLoading(false);
   };

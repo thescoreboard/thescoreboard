@@ -18,7 +18,6 @@ import RoadToFinal from '../../src/components/shared/RoadToFinal';
 import { F, SPORT_COLORS, SPORT_LABELS, STATUS_LABELS, STATUS_COLORS } from '../../src/theme';
 import StandingsTable from '../../src/components/shared/StandingsTable';
 import { STAGE_ORDER, STAGE_LABELS } from '../../src/utils/match';
-import { addRecentlyViewed } from '../../src/utils/recentlyViewed';
 
 // ── Ticker bar (live scores strip) ───────────────────────────────────
 function TickerBar({ matches }: { matches: any[] }) {
@@ -311,14 +310,12 @@ function StandingsSection({ events }: any) {
 }
 
 // ── Info section ──────────────────────────────────────────────────
-function InfoSection({ info, tournament }: any) {
+function InfoSection({ tournament }: any) {
   const { theme } = useTheme();
   const c = theme.colors;
 
   const hasContent = !!(
-    info?.overview || info?.prize_pool?.length || info?.rules ||
-    info?.contact?.entry_fee || info?.contact?.persons?.length ||
-    tournament?.description || tournament?.org_name ||
+    tournament?.description ||
     tournament?.venue || tournament?.city
   );
 
@@ -333,26 +330,12 @@ function InfoSection({ info, tournament }: any) {
         </View>
       )}
 
-      {/* Overview from tournament_info */}
-      {!!info?.overview && !tournament?.description && (
-        <View style={[inf.box, { backgroundColor: c.surface, borderColor: c.border }]}>
-          <Text style={[inf.heading, { color: c.muted }]}>OVERVIEW</Text>
-          <Text style={{ fontSize: 14, color: c.ink, lineHeight: 22 }}>{info.overview}</Text>
-        </View>
-      )}
-
-      {/* Organiser + Venue */}
-      {(tournament?.org_name || tournament?.venue || tournament?.city) && (
+      {/* Venue */}
+      {(tournament?.venue || tournament?.city) && (
         <View style={[inf.box, { backgroundColor: c.surface, borderColor: c.border }]}>
           <Text style={[inf.heading, { color: c.muted }]}>DETAILS</Text>
-          {!!tournament.org_name && (
-            <View style={inf.row}>
-              <Text style={inf.rowLabel}>Organiser</Text>
-              <Text style={[inf.rowValue, { color: c.ink }]}>{tournament.org_name}</Text>
-            </View>
-          )}
           {!!tournament.venue && (
-            <View style={[inf.row, { borderTopWidth: 1, borderTopColor: c.border }]}>
+            <View style={inf.row}>
               <Text style={inf.rowLabel}>Venue</Text>
               <Text style={[inf.rowValue, { color: c.ink }]}>{tournament.venue}</Text>
             </View>
@@ -363,58 +346,6 @@ function InfoSection({ info, tournament }: any) {
               <Text style={[inf.rowValue, { color: c.ink }]}>{[tournament.city, tournament.state].filter(Boolean).join(', ')}</Text>
             </View>
           )}
-          {(tournament.start_date || tournament.end_date) && (
-            <View style={[inf.row, { borderTopWidth: 1, borderTopColor: c.border }]}>
-              <Text style={inf.rowLabel}>Date</Text>
-              <Text style={[inf.rowValue, { color: c.ink }]}>
-                {tournament.start_date
-                  ? new Date(tournament.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-                  : ''}
-                {tournament.end_date && tournament.end_date !== tournament.start_date
-                  ? ' – ' + new Date(tournament.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-                  : ''}
-              </Text>
-            </View>
-          )}
-        </View>
-      )}
-
-      {/* Prize pool */}
-      {info?.prize_pool?.length > 0 && (
-        <View style={[inf.box, { backgroundColor: c.surface, borderColor: c.border }]}>
-          <Text style={[inf.heading, { color: c.muted }]}>PRIZE POOL</Text>
-          {info.prize_pool.map((p: any, i: number) => (
-            <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: c.border }}>
-              <Text style={{ color: c.muted, fontSize: 13 }}>{p.category} · {p.position}</Text>
-              <Text style={{ color: c.ink, fontWeight: '700', fontSize: 13 }}>{p.amount}</Text>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {/* Rules */}
-      {!!info?.rules && (
-        <View style={[inf.box, { backgroundColor: c.surface, borderColor: c.border }]}>
-          <Text style={[inf.heading, { color: c.muted }]}>RULES</Text>
-          <Text style={{ fontSize: 14, color: c.ink, lineHeight: 22 }}>{info.rules}</Text>
-        </View>
-      )}
-
-      {/* Registration & contact */}
-      {(info?.contact?.entry_fee || info?.contact?.persons?.length > 0) && (
-        <View style={[inf.box, { backgroundColor: c.surface, borderColor: c.border }]}>
-          <Text style={[inf.heading, { color: c.muted }]}>REGISTRATION & CONTACT</Text>
-          {!!info.contact.entry_fee && (
-            <Text style={{ fontSize: 14, color: c.ink, marginBottom: 6 }}>
-              Entry fee: <Text style={{ fontWeight: '700' }}>{info.contact.entry_fee}</Text>
-            </Text>
-          )}
-          {!!info.contact.reg_deadline && (
-            <Text style={{ fontSize: 13, color: c.muted, marginBottom: 8 }}>Deadline: {info.contact.reg_deadline}</Text>
-          )}
-          {info.contact.persons?.map((p: any, i: number) => (
-            <Text key={i} style={{ fontSize: 13, color: c.muted }}>{p.name}{p.phone ? ` · ${p.phone}` : ''}</Text>
-          ))}
         </View>
       )}
 
@@ -512,18 +443,6 @@ export default function TournamentPublicScreen() {
     return () => clearInterval(id);
   }, [load]);
 
-  // Log this tournament as recently viewed once data is available
-  useEffect(() => {
-    if (!t?.name) return;
-    const sportKey = t.events?.[0]?.sport_key ?? t.sport_key ?? '';
-    addRecentlyViewed({
-      slug:     t.slug ?? slug,
-      name:     t.name,
-      sportKey,
-      status:   t.status ?? 'draft',
-    }).catch(() => {}); // fire-and-forget
-  }, [t?.tournament_id]);
-
   useTournamentSocket({
     slug,
     onConnected:    () => { wsLiveRef.current = true;  },
@@ -565,7 +484,6 @@ export default function TournamentPublicScreen() {
   const sportColor     = SPORT_COLORS[primarySport] ?? c.primary;
   const hasStandings   = events.some((ev: any) => ev.format === 'round_robin' || ev.format === 'group_knockout');
   const hasKnockout    = allMatches.some((m: any) => ['semi', 'final', 'quarter'].includes(m.stage));
-  const hasInfo        = !!(t.tournament_info?.overview || t.tournament_info?.prize_pool?.length || t.tournament_info?.rules);
   const canRegister    = t.status === 'registration';
 
   // Participant count
@@ -647,32 +565,21 @@ export default function TournamentPublicScreen() {
             {t.name ? t.name.toUpperCase() : ''}
           </Text>
 
-          {/* Date + location */}
-          {(t.start_date || t.city || t.state) && (
+          {/* Location */}
+          {(t.city || t.state) && (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 8 }}>
-              {!!t.start_date && (
-                <Text style={[h.meta, { color: c.muted }]}>
-                  {new Date(t.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  {t.end_date && t.end_date !== t.start_date
-                    ? ' – ' + new Date(t.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
-                    : ''}
-                </Text>
-              )}
               {(t.city || t.state) && (
                 <Text style={[h.meta, { color: c.muted }]}>
                   {[t.city, t.state].filter(Boolean).join(', ')}
                 </Text>
               )}
-              {!!t.org_name && (
-                <Text style={[h.meta, { color: c.muted }]}>by {t.org_name}</Text>
-              )}
             </View>
           )}
 
-          {/* Description / overview */}
-          {!!(t.description || t.tournament_info?.overview) && (
+          {/* Description */}
+          {!!t.description && (
             <Text style={{ fontSize: 13, color: c.muted, lineHeight: 20, marginTop: 10 }} numberOfLines={4}>
-              {t.description || t.tournament_info?.overview}
+              {t.description}
             </Text>
           )}
 
@@ -740,7 +647,7 @@ export default function TournamentPublicScreen() {
           ))}
         </ScrollView>
       )}
-      {activeTab === 'info' && <InfoSection info={t.tournament_info} tournament={t} />}
+      {activeTab === 'info' && <InfoSection tournament={t} />}
     </View>
   );
 }

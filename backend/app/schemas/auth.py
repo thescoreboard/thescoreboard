@@ -24,26 +24,6 @@ class TokenOut(BaseModel):
     token_type: str = "bearer"
 
 
-class PlayerProfileIn(BaseModel):
-    name: str
-    phone: Optional[str] = None
-    age: Optional[int] = None
-    gender: Optional[str] = None
-    location: Optional[str] = None
-
-
-class PlayerProfileOut(BaseModel):
-    player_id: int
-    name: str
-    phone: Optional[str] = None
-    age: Optional[int] = None
-    gender: Optional[str] = None
-    location: Optional[str] = None
-
-    class Config:
-        from_attributes = True
-
-
 class UserOut(BaseModel):
     user_id: int
     email: str
@@ -53,7 +33,6 @@ class UserOut(BaseModel):
     is_superadmin: bool
     plan: str = "free"
     created_at: Optional[datetime] = None
-    player_profile: Optional[PlayerProfileOut] = None
     roles: List[str] = []
 
     class Config:

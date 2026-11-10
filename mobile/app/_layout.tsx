@@ -32,7 +32,6 @@ function RootLayoutInner() {
         <Stack.Screen name="t/[slug]"   options={{ headerShown: false }} />
         <Stack.Screen name="register/[slug]" options={{ headerShown: false }} />
         <Stack.Screen name="organiser"   options={{ headerShown: false }} />
-        <Stack.Screen name="onboarding" options={{ headerShown: false, gestureEnabled: false }} />
       </Stack>
     </>
   );

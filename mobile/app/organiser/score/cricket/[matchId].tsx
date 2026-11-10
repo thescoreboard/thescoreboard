@@ -87,6 +87,8 @@ export default function CricketScorerScreen() {
   const [soTossChoice, setSoTossChoice] = useState<1 | 2>(1);
   const [submitting,   setSubmitting]   = useState(false);
   const [isPaused,     setIsPaused]     = useState(false);
+  const [showEditOvers, setShowEditOvers] = useState(false);
+  const [editOversVal,  setEditOversVal]  = useState(20);
   const [st, setSt] = useState({ runs: 0, wickets: 0, balls: 0, log: [] as string[] });
 
   const loadMatch = useCallback(async () => {
@@ -177,6 +179,22 @@ export default function CricketScorerScreen() {
         half: innings, minute: next.balls, overs: fmt(next.balls),
         cricket_live_state: { ball_log: next.log, ...extra },
         ...extra,
+      });
+      setMatch(updated);
+    } catch (e: any) { Alert.alert('Error', e.message); }
+    setSubmitting(false);
+  };
+
+  // Change the number of overs for this innings (mirrors web CricketScorer "Edit Overs").
+  const saveEditedOvers = async () => {
+    setShowEditOvers(false);
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const updated = await apiUpdateScore(token!, parseInt(matchId), {
+        score_p1: st.runs, score_p2: st.wickets,
+        half: innings, minute: st.balls, overs: fmt(st.balls),
+        cricket_live_state: { ball_log: st.log, configured_overs: editOversVal },
       });
       setMatch(updated);
     } catch (e: any) { Alert.alert('Error', e.message); }
@@ -427,6 +445,12 @@ export default function CricketScorerScreen() {
                   <Text style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
                     max {maxOvers} ov, {maxWickets}wk
                   </Text>
+                  {!isDone && !isSuperOver && (
+                    <TouchableOpacity onPress={() => { setEditOversVal(maxOvers); setShowEditOvers(true); }}
+                      style={{ marginTop: 4, borderRadius: 4, borderWidth: 1, borderColor: C.border, paddingHorizontal: 8, paddingVertical: 2 }}>
+                      <Text style={{ color: C.muted, fontSize: 10, fontWeight: '700' }}>Edit</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
 
@@ -628,6 +652,40 @@ export default function CricketScorerScreen() {
       </Modal>
 
       {/* Super Over toss */}
+      {/* Edit overs */}
+      <Modal visible={showEditOvers} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.88)', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <View style={{ width: '100%', maxWidth: 320, backgroundColor: C.surface, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 24 }}>
+            <Text style={{ color: C.ink, fontWeight: '900', fontSize: 13, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>Edit Overs</Text>
+            <Text style={{ color: C.muted, fontSize: 12, marginBottom: 20 }}>Change the number of overs for this innings.</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 20 }}>
+              <TouchableOpacity onPress={() => setEditOversVal(v => Math.max(Math.floor(st.balls / 6) + 1, v - 1))}
+                style={{ width: 44, height: 44, borderRadius: 10, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: C.muted, fontSize: 20 }}>−</Text>
+              </TouchableOpacity>
+              <Text style={{ color: C.lime, fontSize: 40, fontWeight: '900', minWidth: 60, textAlign: 'center' }}>{editOversVal}</Text>
+              <TouchableOpacity onPress={() => setEditOversVal(v => Math.min(50, v + 1))}
+                style={{ width: 44, height: 44, borderRadius: 10, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: C.lime, fontSize: 20 }}>+</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={{ color: C.muted, fontSize: 11, textAlign: 'center', marginBottom: 16 }}>
+              Overs already bowled: {Math.floor(st.balls / 6)} — minimum is {Math.floor(st.balls / 6) + 1}
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity onPress={saveEditedOvers}
+                style={{ flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: C.green, alignItems: 'center' }}>
+                <Text style={{ color: '#000', fontWeight: '900', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1 }}>Save</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowEditOvers(false)}
+                style={{ flex: 1, paddingVertical: 12, borderRadius: 10, borderWidth: 1, borderColor: C.border, alignItems: 'center' }}>
+                <Text style={{ color: C.muted, fontWeight: '700', fontSize: 12 }}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={showSOToss} transparent animationType="fade">
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.93)',
           alignItems: 'center', justifyContent: 'center', padding: 32, gap: 20 }}>

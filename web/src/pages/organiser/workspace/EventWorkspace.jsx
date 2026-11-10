@@ -21,6 +21,7 @@ import SponsorsSection      from "../../../components/organiser/SponsorsSection"
 import { MediaUpload }      from "../../../components/shared/MediaUpload";
 import TournamentBasicInfoSection from "../../../components/organiser/TournamentBasicInfoSection";
 import SetupSection         from "../../../components/organiser/SetupSection";
+import { BracketPreview, BracketEditor, groupFixtureLines } from "../../../components/organiser/BracketBuilder";
 import { getEventSetupChecklist, summarizeChecklist, isSectionComplete } from "../../../utils/tournamentCompleteness";
 
 const SPORT_META = {
@@ -61,6 +62,7 @@ export default function EventWorkspace() {
   const [standings,          setStandings]          = useState(null);
   const [numGroups,          setNumGroups]          = useState(4);
   const [qualifiersPerGroup, setQualifiersPerGroup] = useState(2);
+  const [showRedraw,         setShowRedraw]         = useState(false);
   const [editingOvers,       setEditingOvers]       = useState(false);
   const [oversVal,           setOversVal]           = useState(null);
 
@@ -316,80 +318,41 @@ export default function EventWorkspace() {
     } catch (e) { flash("Error: " + e.message); }
   };
 
-  // Creates all first-round matches (with participants) + TBD later-round matches.
-  // `participants` is passed so we can identify which player has the bye (not in any
-  // slot) and pre-seed them into position 1 of the first next-round match.
-  const handleBulkCreateMatches = async (template, slots, participants) => {
+  // Manual draw for a direct-knockout bracket: the organiser placed every slot.
+  const handleManualBracket = async (order) => {
     try {
-      const eId     = currentEvent.event_id;
-      const useTeam = isTeam || isDoubles;
-      const first   = template.rounds.find(r => r.isAssignable);
-
-      // Identify bye participant: the one not assigned to any first-round slot
-      const usedIds = new Set(slots.flatMap(s => [s.p1, s.p2].filter(Boolean).map(String)));
-      const byeParticipant = (template.byeCount > 0 && participants)
-        ? participants.find(p => !usedIds.has(String(p.id)))
-        : null;
-
-      // Round 1: first-round matches with real participants
-      for (const slot of slots) {
-        await createMatch(eId, {
-          stage: first.stage,
-          round: 1,
-          ...(useTeam
-            ? { team1_id:   parseInt(slot.p1), team2_id:   parseInt(slot.p2) }
-            : { player1_id: parseInt(slot.p1), player2_id: parseInt(slot.p2) }
-          ),
-        });
-      }
-
-      // Later rounds: TBD placeholder matches numbered round 2, 3, 4 …
-      // The bye player is pre-seeded into position 1 of the very first next-round
-      // match so that _advance_winner can correctly fill position 2 later.
-      const laterRounds = template.rounds.filter(r => !r.isAssignable);
-      let roundNum  = 2;
-      let byePlaced = false;
-
-      for (const round of laterRounds) {
-        for (let i = 0; i < round.matchCount; i++) {
-          const body = { stage: round.stage, round: roundNum };
-          if (!byePlaced && byeParticipant) {
-            if (useTeam) body.team1_id   = byeParticipant.id;
-            else         body.player1_id = byeParticipant.id;
-            byePlaced = true;
-          }
-          await createMatch(eId, body);
-        }
-        roundNum++;
-      }
-
+      const r = await generateFixtures(currentEvent.event_id, true, order);
       loadData();
-      flash(`Bracket created! ${template.total} match${template.total !== 1 ? "es" : ""}.`);
+      setShowRedraw(false);
+      flash(`Bracket created — ${r.matches_created} matches.`);
     } catch (e) { flash("Error: " + e.message); }
   };
 
-  // Manually assigns participants to groups, then generates bracket matches
-  const handleManualGroupSetup = async (groupAssignments) => {
-    // groupAssignments = [{ name: "Group A", participants: [id, id, ...] }, ...]
+  // Manual draw for the championship (semis & final) from the group winners.
+  const handleManualChampionship = async (order) => {
     try {
-      const eId     = currentEvent.event_id;
-      const useTeam = isTeam || isDoubles;
-
-      for (const group of groupAssignments) {
-        const created = await createGroup(eId, group.name);
-        const gId     = created.group_id;
-        for (const pId of group.participants) {
-          if (useTeam) {
-            await apiFetch(`/events/${eId}/teams/${pId}?group_id=${gId}`, { method: "PATCH" });
-          } else {
-            await assignPlayerGroup(eId, pId, gId);
-          }
-        }
-      }
-
-      await generateGroupMatches(eId);
+      const r = await apiFetch(
+        `/events/${currentEvent.event_id}/generate-knockout-from-groups?qualifiers_per_group=${qualifiersPerGroup}&third_place=true`,
+        { method: "POST", body: JSON.stringify({ order }) }
+      );
       loadData();
-      flash("Groups created and matches generated!");
+      flash(`Championship created — ${r.matches_created} matches.`);
+    } catch (e) { flash("Error: " + e.message); }
+  };
+
+  // Manual group draw — one atomic call: groups, seating and every group bracket.
+  // groupAssignments = [{ name: "Group A", participants: [id, id, ...] }, ...]
+  // (participant order = bracket order inside the group)
+  const handleManualGroupSetup = async (groupAssignments) => {
+    try {
+      const r = await apiFetch(`/events/${currentEvent.event_id}/manual-groups`, {
+        method: "POST",
+        body: JSON.stringify({
+          groups: groupAssignments.map(g => ({ name: g.name, participant_ids: g.participants })),
+        }),
+      });
+      loadData();
+      flash(`${r.groups_created} groups created, ${r.matches_created} matches generated!`);
     } catch (e) { flash("Error: " + e.message); }
   };
 
@@ -842,7 +805,7 @@ export default function EventWorkspace() {
                       ]
                 }
                 isTeamEvent={isTeam || isDoubles}
-                onCreateMatch={handleCreateMatch}
+                onManualChampionship={handleManualChampionship}
                 onManualGroupSetup={handleManualGroupSetup}
                 flash={flash}
               />
@@ -855,21 +818,31 @@ export default function EventWorkspace() {
                       ...(currentEvent.ungrouped_players || []).map(p => ({ id: p.player_id, name: p.name })),
                     ];
 
-                // ── No matches yet → show suggestion + setup panel ──
+                // ── No matches yet → show the setup panel for this format ──
                 if (!currentEvent.matches?.length) {
-                  return (
+                  return currentEvent.format === "round_robin" ? (
+                    <RoundRobinSetupPanel
+                      participants={allParticipants}
+                      isTeam={isTeam || isDoubles}
+                      matches={[]}
+                      onAutoGenerate={handleGenerateFixtures}
+                      onCreateMatch={handleCreateMatch}
+                      flash={flash}
+                    />
+                  ) : (
                     <DirectKnockoutSuggestionPanel
-                      participantCount={allParticipants.length}
                       participants={allParticipants}
                       isTeam={isTeam || isDoubles}
                       onAutoGenerate={handleGenerateFixtures}
-                      onBulkCreate={handleBulkCreateMatches}
+                      onManualSubmit={handleManualBracket}
                       flash={flash}
                     />
                   );
                 }
 
-                // ── Matches exist → control bar + add manually + bracket ──
+                const isRR = currentEvent.format === "round_robin";
+
+                // ── Matches exist → control bar + bracket ──
                 return (
                   <>
                     {!isCompleted && (
@@ -879,35 +852,49 @@ export default function EventWorkspace() {
                             {currentEvent.match_count} {isDoubles ? "pair " : isTeam ? "team " : ""}matches
                           </span>
                           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                            <ConfirmButton
-                              label="Regenerate Fixtures"
-                              title="Regenerate all fixtures?"
-                              body="Are you sure you want to regenerate all fixtures? The current fixtures will be replaced."
-                              confirmLabel="Yes, regenerate" onConfirm={handleGenerateFixtures} />
+                            {isRR ? (
+                              <ConfirmButton
+                                label="Add Missing Fixtures"
+                                title="Add missing fixtures?"
+                                body="Every pair that hasn't been scheduled yet (for example after adding a team) will get a fixture. Existing fixtures are kept."
+                                confirmLabel="Yes, add them" onConfirm={handleGenerateFixtures} />
+                            ) : (
+                              <>
+                                <ConfirmButton
+                                  label="Regenerate Fixtures"
+                                  title="Regenerate all fixtures?"
+                                  body="Are you sure you want to regenerate all fixtures? The current fixtures will be replaced."
+                                  confirmLabel="Yes, regenerate" onConfirm={handleGenerateFixtures} />
+                                <button className="btn btn-outline" onClick={() => setShowRedraw(v => !v)}>
+                                  {showRedraw ? "Cancel Manual Draw" : "Redraw Manually"}
+                                </button>
+                              </>
+                            )}
                           </div>
                         </div>
 
-                        <ManualMatchCreator
-                          format={currentEvent.format}
-                          groups={currentEvent.groups || []}
-                          participants={allParticipants}
-                          isTeam={isTeam || isDoubles}
-                          onCreate={handleCreateMatch}
-                          flash={flash}
-                          eligibleIds={
-                            // Direct knockout: each player appears once in the bracket,
-                            // so hide anyone already placed. Round robin allows repeats.
-                            currentEvent.format === "direct_knockout"
-                              ? new Set(
-                                  allParticipants
-                                    .map(p => String(p.id))
-                                    .filter(id => !(currentEvent.matches || []).some(m =>
-                                      [m.player_1, m.player_2].some(mp =>
-                                        String(mp?.player_id ?? mp?.team_id) === id)))
-                                )
-                              : null
-                          }
-                        />
+                        {isRR && (
+                          <ManualFixtureCreator
+                            participants={allParticipants}
+                            isTeam={isTeam || isDoubles}
+                            matches={currentEvent.matches || []}
+                            onCreate={handleCreateMatch}
+                            flash={flash}
+                          />
+                        )}
+
+                        {!isRR && showRedraw && (
+                          <BracketEditor
+                            participants={allParticipants}
+                            unit={isDoubles ? "pair" : isTeam ? "team" : "player"}
+                            title="Manual Draw"
+                            intro="This replaces the current fixtures. It only works while no match has started."
+                            submitLabel="Replace bracket"
+                            onSubmit={handleManualBracket}
+                            onBack={() => setShowRedraw(false)}
+                            flash={flash}
+                          />
+                        )}
                       </>
                     )}
 
@@ -1099,48 +1086,6 @@ export default function EventWorkspace() {
   );
 }
 
-// ── Bracket template calculator ──────────────────────────────
-// Mirrors the backend build_bracket algorithm to show bracket structure.
-// Returns { rounds, byeCount, total }
-// rounds = [{ stage, label, matchCount, isAssignable, byeCount }]
-// The 3rd place match is always included (needs 4+ participants).
-function getBracketTemplate(n) {
-  if (n < 2) return null;
-  const bracketSize = Math.pow(2, Math.ceil(Math.log2(Math.max(n, 2))));
-  const halfBracket = bracketSize / 2;
-  const prelimCount = n - halfBracket;     // first-round real matches
-  const byeCount    = halfBracket - prelimCount;
-
-  const STAGE_FOR_COUNT = (count) => {
-    if (count <= 2)  return { stage: "final",       label: "Final"           };
-    if (count <= 4)  return { stage: "semi",         label: "Semi Finals"     };
-    if (count <= 8)  return { stage: "quarter",      label: "Quarter Finals"  };
-    if (count <= 16) return { stage: "round_of_16",  label: "Round of 16"     };
-    if (count <= 32) return { stage: "round_of_32",  label: "Round of 32"     };
-    return { stage: "preliminary", label: "First Round" };
-  };
-
-  const r1 = byeCount > 0
-    ? { stage: "preliminary", label: "Preliminary Round" }
-    : STAGE_FOR_COUNT(n);
-
-  const rounds = [{ ...r1, matchCount: prelimCount, isAssignable: true, byeCount }];
-
-  // Subsequent TBD rounds (advancing players = halfBracket)
-  let advancing = halfBracket;
-  while (advancing > 1) {
-    const info = STAGE_FOR_COUNT(advancing);
-    rounds.push({ ...info, matchCount: advancing / 2, isAssignable: false, byeCount: 0 });
-    advancing = advancing / 2;
-  }
-
-  if (n >= 4) {
-    rounds.push({ stage: "third_place", label: "3rd Place Match", matchCount: 1, isAssignable: false, byeCount: 0 });
-  }
-
-  return { rounds, byeCount, total: rounds.reduce((s, r) => s + r.matchCount, 0) };
-}
-
 // ── ConfirmButton ─────────────────────────────────────────────
 // A button that asks "are you sure?" in a popup before running onConfirm.
 function ConfirmButton({ label, title, body, confirmLabel = "Yes, continue", onConfirm, className = "btn btn-primary", style }) {
@@ -1165,200 +1110,110 @@ function ConfirmButton({ label, title, body, confirmLabel = "Yes, continue", onC
 }
 
 // ── DirectKnockoutSuggestionPanel ────────────────────────────
-// Shown when no fixtures exist yet for a direct_knockout event.
-// Two modes: suggestion overview, or manual slot assignment.
-function DirectKnockoutSuggestionPanel({
-  participantCount, participants, isTeam,
-  onAutoGenerate, onBulkCreate, flash,
-}) {
-  const [mode,  setMode]  = useState("suggestion"); // "suggestion" | "manual"
-  const n       = participantCount;
-  const template = getBracketTemplate(n);
-  const unit    = isTeam ? "team" : "player";
-  const Unit    = isTeam ? "Team" : "Player";
+// Shown when no fixtures exist yet for a direct_knockout event: the full
+// bracket for the current number of participants (odd or even, byes
+// included), then either an automatic random draw or a manual one where the
+// organiser places every slot.
+function DirectKnockoutSuggestionPanel({ participants, isTeam, onAutoGenerate, onManualSubmit, flash }) {
+  const [mode, setMode] = useState("suggestion"); // "suggestion" | "manual"
+  const n    = participants.length;
+  const unit = isTeam ? "team" : "player";
 
-  const cardStyle  = { marginBottom: 16 };
-  const labelStyle = { fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: "var(--muted)", display: "block", marginBottom: 4 };
-
-  // ── Suggestion overview ───────────────────────────────────
-  if (mode === "suggestion") {
+  if (mode === "manual") {
     return (
-      <div className="card" style={cardStyle}>
-        {/* Header */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 18, flexWrap: "wrap", gap: 8 }}>
-          <div>
-            <div style={{ fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 900, color: "var(--ink)", letterSpacing: -0.3 }}>
-              🏆 Tournament Setup
-            </div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
-              {n} {unit}{n !== 1 ? "s" : ""} · Direct Knockout
-            </div>
-          </div>
-        </div>
-
-        {n < 2 ? (
-          <div style={{ fontSize: 13, color: "var(--muted)", padding: "12px 0" }}>
-            Add at least 2 {unit}s to set up the bracket.
-          </div>
-        ) : (
-          <>
-            {/* Bracket flow */}
-            <div style={{ marginBottom: 18 }}>
-              <div style={labelStyle}>Recommended Bracket — {template.total} matches total</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 0, flexWrap: "wrap", marginTop: 6 }}>
-                {template.rounds.map((r, i) => (
-                  <div key={r.stage} style={{ display: "flex", alignItems: "center" }}>
-                    {i > 0 && <span style={{ color: "var(--muted)", fontSize: 16, padding: "0 8px" }}>→</span>}
-                    <div style={{
-                      background: r.isAssignable ? "var(--primary-dim)" : "var(--surface)",
-                      border: `1px solid ${r.isAssignable ? "rgba(255,107,53,0.35)" : "var(--border)"}`,
-                      borderRadius: 8, padding: "8px 12px", textAlign: "center", minWidth: 90,
-                    }}>
-                      <div style={{ fontFamily: "var(--font-display)", fontSize: 11, fontWeight: 800, color: r.isAssignable ? "var(--primary)" : "var(--ink)", textTransform: "uppercase", letterSpacing: 0.5 }}>
-                        {r.label}
-                      </div>
-                      <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-                        {r.matchCount} match{r.matchCount !== 1 ? "es" : ""}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {template.byeCount > 0 && (
-                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 10, padding: "6px 10px", background: "var(--elevated)", borderRadius: 6, display: "inline-block" }}>
-                  ℹ {template.byeCount} {unit}{template.byeCount !== 1 ? "s" : ""} will get a bye directly to the next round
-                </div>
-              )}
-            </div>
-
-            {/* Action buttons */}
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <ConfirmButton
-                label="⚡ Generate Automatically" style={{ gap: 6 }}
-                title="Generate all fixtures?"
-                body="Are you sure you want to generate all fixtures? Participants will be drawn into matches automatically."
-                confirmLabel="Yes, generate" onConfirm={onAutoGenerate} />
-              <button className="btn btn-outline" onClick={() => setMode("manual")}>
-                🎯 Set Up Manually
-              </button>
-            </div>
-          </>
-        )}
-      </div>
+      <BracketEditor
+        participants={participants}
+        unit={unit}
+        title="Set Up Manually"
+        intro="Choose who plays in every match. Later rounds fill in automatically as winners advance."
+        submitLabel="Create bracket"
+        onSubmit={onManualSubmit}
+        onBack={() => setMode("suggestion")}
+        flash={flash}
+      />
     );
   }
 
-  // ── Manual slot assignment ────────────────────────────────
   return (
-    <DirectKnockoutManualSetup
-      template={template}
-      participants={participants}
-      isTeam={isTeam}
-      onBulkCreate={onBulkCreate}
-      onBack={() => setMode("suggestion")}
-      flash={flash}
-    />
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 900, color: "var(--ink)", letterSpacing: -0.3 }}>
+          🏆 Tournament Setup
+        </div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
+          {n} {unit}{n !== 1 ? "s" : ""} · Direct Knockout
+        </div>
+      </div>
+
+      {n < 2 ? (
+        <div style={{ fontSize: 13, color: "var(--muted)", padding: "12px 0" }}>
+          Add at least 2 {unit}s to set up the bracket.
+        </div>
+      ) : (
+        <>
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: "var(--muted)", marginBottom: 8 }}>
+              Your bracket
+            </div>
+            <BracketPreview n={n} unit={unit} />
+          </div>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <ConfirmButton
+              label="⚡ Generate Automatically" style={{ gap: 6 }}
+              title="Generate all fixtures?"
+              body="Are you sure you want to generate all fixtures? Participants will be drawn into matches automatically."
+              confirmLabel="Yes, generate" onConfirm={onAutoGenerate} />
+            <button className="btn btn-outline" onClick={() => setMode("manual")}>🎯 Set Up Manually</button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
-// ── DirectKnockoutManualSetup ─────────────────────────────────
-// Shows slot-by-slot participant assignment for the first round.
-function DirectKnockoutManualSetup({ template, participants, isTeam, onBulkCreate, onBack, flash }) {
-  const first      = template?.rounds?.find(r => r.isAssignable);
-  const slotCount  = first?.matchCount || 0;
-  const [slots, setSlots] = useState(() => Array.from({ length: slotCount }, () => ({ p1: "", p2: "" })));
-  const [busy, setBusy]   = useState(false);
-
-  const unit  = isTeam ? "Team" : "Player";
-  const iStyle = {
-    background: "var(--elevated)", border: "1px solid var(--border-mid)",
-    borderRadius: 6, padding: "7px 10px", fontSize: 13,
-    color: "var(--ink)", width: "100%", outline: "none", fontFamily: "inherit",
-  };
-  const lStyle = { fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: "var(--muted)", display: "block", marginBottom: 4 };
-
-  // IDs that are already picked in some slot
-  const usedSet = new Set(slots.flatMap(s => [s.p1, s.p2].filter(Boolean)));
-
-  const updateSlot = (idx, field, val) =>
-    setSlots(prev => prev.map((s, i) => i === idx ? { ...s, [field]: val } : s));
-
-  const handleCreate = async () => {
-    const incomplete = slots.some(s => !s.p1 || !s.p2);
-    if (incomplete) return flash("Fill in all match slots before creating.");
-    setBusy(true);
-    // Pass participants so handleBulkCreateMatches can identify the bye player
-    try { await onBulkCreate(template, slots, participants); }
-    finally { setBusy(false); }
-  };
-
-  const laterRounds = template.rounds.filter(r => !r.isAssignable);
+// ── RoundRobinSetupPanel ──────────────────────────────────────
+// Round robin = every pair plays once, so any number of teams works (odd
+// counts simply rest a team each round — no byes to configure). Generate
+// every fixture at once, or add them one by one.
+function RoundRobinSetupPanel({ participants, isTeam, matches, onAutoGenerate, onCreateMatch, flash }) {
+  const n    = participants.length;
+  const unit = isTeam ? "team" : "player";
+  const total = (n * (n - 1)) / 2;
 
   return (
-    <div className="card" style={{ marginBottom: 16, border: "1px solid rgba(255,107,53,0.25)" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 4, flexWrap: "wrap", gap: 8 }}>
-        <div>
-          <div style={{ fontFamily: "var(--font-display)", fontSize: 13, fontWeight: 900, color: "var(--ink)" }}>
-            Manual Setup — {first?.label}
+    <div>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 900, color: "var(--ink)", letterSpacing: -0.3 }}>
+            🏆 Tournament Setup
           </div>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-            Assign participants for {slotCount} first-round match{slotCount !== 1 ? "es" : ""}.
-            {laterRounds.length > 0 && (
-              <span> {laterRounds.map(r => r.label).join(" → ")} will be created as TBD.</span>
-            )}
+          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
+            {n} {unit}{n !== 1 ? "s" : ""} · Round Robin
           </div>
         </div>
-        <button className="btn btn-outline btn-sm" onClick={onBack}>← Back</button>
+        {n < 2 ? (
+          <div style={{ fontSize: 13, color: "var(--muted)" }}>Add at least 2 {unit}s to create fixtures.</div>
+        ) : (
+          <>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14, padding: "8px 10px", background: "var(--elevated)", borderRadius: 6 }}>
+              Every {unit} plays every other {unit} once → {total} match{total !== 1 ? "es" : ""}.
+              Generate them all, or add the fixtures one by one below.
+            </div>
+            <ConfirmButton
+              label="⚡ Generate Automatically"
+              title="Generate all fixtures?"
+              body={`Are you sure you want to generate all fixtures? ${total} matches will be created.`}
+              confirmLabel="Yes, generate" onConfirm={onAutoGenerate} />
+          </>
+        )}
       </div>
-
-      {template.byeCount > 0 && (
-        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 14, padding: "6px 10px", background: "var(--elevated)", borderRadius: 6 }}>
-          ℹ {template.byeCount} participant{template.byeCount !== 1 ? "s" : ""} will automatically get a bye to the next round.
-        </div>
+      {n >= 2 && (
+        <ManualFixtureCreator
+          participants={participants} isTeam={isTeam} matches={matches}
+          onCreate={onCreateMatch} flash={flash} startOpen
+        />
       )}
-
-      {/* Match slots */}
-      <div style={{ marginBottom: 14 }}>
-        {slots.map((slot, idx) => (
-          <div key={idx} style={{ marginBottom: 12, padding: "12px 0", borderBottom: idx < slots.length - 1 ? "1px solid var(--border)" : "none" }}>
-            <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1.5, color: "var(--muted)", marginBottom: 8 }}>
-              Match {idx + 1}
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 36px 1fr", gap: 8, alignItems: "end" }}>
-              <div>
-                <label style={lStyle}>{unit} 1</label>
-                <select style={iStyle} value={slot.p1} onChange={e => updateSlot(idx, "p1", e.target.value)}>
-                  <option value="">— Select —</option>
-                  {participants
-                    .filter(p => String(p.id) === slot.p1 || !usedSet.has(String(p.id)))
-                    .filter(p => String(p.id) !== slot.p2)
-                    .map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </div>
-              <div style={{ textAlign: "center", paddingBottom: 8, fontWeight: 900, color: "var(--muted)", fontSize: 11 }}>vs</div>
-              <div>
-                <label style={lStyle}>{unit} 2</label>
-                <select style={iStyle} value={slot.p2} onChange={e => updateSlot(idx, "p2", e.target.value)}>
-                  <option value="">— Select —</option>
-                  {participants
-                    .filter(p => String(p.id) === slot.p2 || !usedSet.has(String(p.id)))
-                    .filter(p => String(p.id) !== slot.p1)
-                    .map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Actions */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <button className="btn btn-primary" onClick={handleCreate} disabled={busy || slots.some(s => !s.p1 || !s.p2)}>
-          {busy ? "Creating…" : `✓ Create All ${template.total} Matches`}
-        </button>
-        <button className="btn btn-outline btn-sm" onClick={onBack}>Cancel</button>
-      </div>
     </div>
   );
 }
@@ -1373,6 +1228,8 @@ function GroupKnockoutSuggestionPanel({
 }) {
   const [mode, setMode] = useState("suggestion"); // "suggestion" | "manual"
   const n = participantCount;
+  const maxGroups = Math.max(2, Math.floor(n / 2));   // every group needs at least 2
+  useEffect(() => { setNumGroups(g => Math.max(2, Math.min(g, maxGroups))); }, [maxGroups]);
 
   // Recommend ≈ 4 participants per group
   const recommended = Math.max(2, Math.min(Math.floor(n / 4), 8));
@@ -1427,7 +1284,7 @@ function GroupKnockoutSuggestionPanel({
                     onClick={() => setNumGroups(g => Math.max(2, g - 1))}>−</button>
                   <span style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 900, color: "var(--primary)", minWidth: 28, textAlign: "center" }}>{numGroups}</span>
                   <button className="btn btn-outline btn-sm" style={{ width: 28, padding: 0 }}
-                    onClick={() => setNumGroups(g => Math.min(16, g + 1))}>+</button>
+                    onClick={() => setNumGroups(g => Math.min(16, maxGroups, g + 1))}>+</button>
                 </div>
                 <span style={{ fontSize: 11, color: "var(--muted)" }}>≈ {perGroup} {unitLabel} per group</span>
               </div>
@@ -1485,11 +1342,15 @@ function GroupManualAssignment({ numGroups, participants, isTeam, unitLabel, Uni
     setSlots(prev => prev.map((g, i) => i === gi ? g.map((v, j) => j === si ? val : v) : g));
 
   const handleCreate = async () => {
-    // Validate: every participant assigned exactly once
+    // Validate: every participant assigned exactly once, 2+ per group
     const allAssigned = slots.flat().filter(Boolean);
     const unique = new Set(allAssigned);
     if (unique.size < participants.length) {
       return flash(`Assign all ${participants.length} ${unitLabel} to groups.`);
+    }
+    const tooSmall = slots.findIndex(g => g.filter(Boolean).length < 2);
+    if (tooSmall !== -1) {
+      return flash(`Group ${groupLabels[tooSmall]} needs at least 2 ${unitLabel}.`);
     }
 
     const groupAssignments = slots.map((g, i) => ({
@@ -1503,6 +1364,8 @@ function GroupManualAssignment({ numGroups, participants, isTeam, unitLabel, Uni
   };
 
   const allFilled = slots.flat().filter(Boolean).length === participants.length;
+  const groupsValid = slots.every(g => g.filter(Boolean).length >= 2);
+  const nameOf = (id) => participants.find(p => String(p.id) === String(id))?.name || "—";
 
   return (
     <div className="card" style={{ marginBottom: 16, border: "1px solid rgba(255,107,53,0.25)" }}>
@@ -1512,7 +1375,8 @@ function GroupManualAssignment({ numGroups, participants, isTeam, unitLabel, Uni
             Assign {UnitLabel} to Groups
           </div>
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-            {numGroups} groups · ~{perGroup} {unitLabel} each
+            {numGroups} groups · ~{perGroup} {unitLabel} each · each group needs at least 2.
+            The fixtures preview under each group shows who plays and who gets a bye.
           </div>
         </div>
         <button className="btn btn-outline btn-sm" onClick={onBack}>← Back</button>
@@ -1535,6 +1399,21 @@ function GroupManualAssignment({ numGroups, participants, isTeam, unitLabel, Uni
                 </select>
               ))}
             </div>
+            {(() => {
+              const picked = group.filter(Boolean);
+              if (picked.length === 0) return null;
+              if (picked.length < 2) {
+                return <div style={{ fontSize: 11, color: "var(--red)", marginTop: 8 }}>Needs at least 2 {unitLabel}.</div>;
+              }
+              const lines = groupFixtureLines(picked.map(nameOf));
+              return (
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, paddingTop: 8, borderTop: "1px dashed var(--border)" }}>
+                  <div style={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, fontSize: 9, marginBottom: 3 }}>Fixtures</div>
+                  {lines.map((l, i) => <div key={i}>{l}</div>)}
+                  <div style={{ marginTop: 3 }}>then the group final</div>
+                </div>
+              );
+            })()}
           </div>
         ))}
       </div>
@@ -1547,7 +1426,7 @@ function GroupManualAssignment({ numGroups, participants, isTeam, unitLabel, Uni
       )}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button className="btn btn-primary" onClick={handleCreate} disabled={busy || !allFilled}>
+        <button className="btn btn-primary" onClick={handleCreate} disabled={busy || !allFilled || !groupsValid}>
           {busy ? "Creating…" : "✓ Create Groups & Matches"}
         </button>
         <button className="btn btn-outline btn-sm" onClick={onBack}>Cancel</button>
@@ -1556,65 +1435,37 @@ function GroupManualAssignment({ numGroups, participants, isTeam, unitLabel, Uni
   );
 }
 
-// ── ManualMatchCreator ───────────────────────────────────────
-// Collapsible form allowing organisers to create individual matches by hand.
-// Works for both direct_knockout and group_knockout formats.
-// eligibleIds (Set of String ids, optional): for knockout stages, restricts the
-// dropdowns to players who qualified from groups AND aren't already placed in
-// a knockout match. Group-stage matches always show the full participant list.
-const KNOCKOUT_ROUND = { preliminary: 1, round_of_16: 1, quarter: 2, semi: 3, final: 4, third_place: 4 };
+// ── ManualFixtureCreator ─────────────────────────────────────
+// Round robin only: add one fixture at a time. A pair that already has a
+// fixture can't be added twice (the second dropdown hides opponents already
+// scheduled against the first pick).
+function ManualFixtureCreator({ participants = [], isTeam, matches = [], onCreate, flash, startOpen = false }) {
+  const [open, setOpen] = useState(startOpen);
+  const [p1,   setP1]   = useState("");
+  const [p2,   setP2]   = useState("");
+  const [busy, setBusy] = useState(false);
 
-function ManualMatchCreator({ format, groups = [], participants = [], isTeam, onCreate, flash, eligibleIds = null }) {
-  const [open,    setOpen]    = useState(false);
-  const [stage,   setStage]   = useState(format === "group_knockout" ? "group" : "semi");
-  const [groupId, setGroupId] = useState("");
-  const [p1,      setP1]      = useState("");
-  const [p2,      setP2]      = useState("");
-  const [busy,    setBusy]    = useState(false);
-
-  const isGroupKnockout = format === "group_knockout";
-  const isGroupStage    = isGroupKnockout && stage === "group";
-
-  // Knockout stages draw from the eligible pool only
-  const pool = (isGroupStage || !eligibleIds)
-    ? participants
-    : participants.filter(p => eligibleIds.has(String(p.id)));
-
-  const stageOptions = isGroupKnockout
-    ? [
-        { value: "group",       label: "Group Stage" },
-        { value: "quarter",     label: "Quarter Final" },
-        { value: "semi",        label: "Semi Final" },
-        { value: "final",       label: "Final" },
-        { value: "third_place", label: "3rd Place Match" },
-      ]
-    : [
-        { value: "preliminary", label: "Preliminary" },
-        { value: "quarter",     label: "Quarter Final" },
-        { value: "semi",        label: "Semi Final" },
-        { value: "final",       label: "Final" },
-        { value: "third_place", label: "3rd Place Match" },
-      ];
-
-  const handleStageChange = (val) => { setStage(val); setGroupId(""); setP1(""); setP2(""); };
+  const idOf = (mp) => String(mp?.player_id ?? mp?.team_id ?? "");
+  const playedWith = (id) => new Set(
+    matches
+      .filter(m => idOf(m.player_1) === id || idOf(m.player_2) === id)
+      .map(m => (idOf(m.player_1) === id ? idOf(m.player_2) : idOf(m.player_1)))
+  );
+  const taken = p1 ? playedWith(p1) : new Set();
 
   const handleCreate = async () => {
     if (!p1 || !p2) return flash("Select both participants.");
-    if (p1 === p2) return flash("Cannot match a participant against themselves.");
+    if (p1 === p2)  return flash("Cannot match a participant against themselves.");
+    if (taken.has(p2)) return flash("These two already have a fixture.");
     setBusy(true);
     try {
-      const body = {
-        stage:    isGroupStage ? "group" : stage,
-        group_id: isGroupStage && groupId ? parseInt(groupId) : null,
-        round:    isGroupStage ? 1 : (KNOCKOUT_ROUND[stage] || 1),
+      await onCreate({
+        stage: "round_robin", round: 1, group_id: null,
         ...(isTeam
           ? { team1_id: parseInt(p1), team2_id: parseInt(p2) }
-          : { player1_id: parseInt(p1), player2_id: parseInt(p2) }
-        ),
-      };
-      await onCreate(body);
-      setP1(""); setP2(""); setGroupId("");
-      setOpen(false);
+          : { player1_id: parseInt(p1), player2_id: parseInt(p2) }),
+      });
+      setP1(""); setP2("");
     } finally { setBusy(false); }
   };
 
@@ -1623,10 +1474,8 @@ function ManualMatchCreator({ format, groups = [], participants = [], isTeam, on
     borderRadius: 6, padding: "7px 10px", fontSize: 13,
     color: "var(--ink)", width: "100%", outline: "none", fontFamily: "inherit",
   };
-  const lStyle = {
-    fontSize: 10, fontWeight: 800, textTransform: "uppercase",
-    letterSpacing: 2, color: "var(--muted)", display: "block", marginBottom: 4,
-  };
+  const lStyle = { fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: "var(--muted)", display: "block", marginBottom: 4 };
+  const unit = isTeam ? "Team" : "Player";
 
   if (!open) {
     return (
@@ -1644,70 +1493,31 @@ function ManualMatchCreator({ format, groups = [], participants = [], isTeam, on
         <span style={{ fontFamily: "var(--font-display)", fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1.5, color: "var(--primary)" }}>
           Add Match Manually
         </span>
-        <button className="btn btn-outline btn-sm" onClick={() => setOpen(false)}>✕ Close</button>
+        {!startOpen && <button className="btn btn-outline btn-sm" onClick={() => setOpen(false)}>✕ Close</button>}
       </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: isGroupStage && groups.length ? "1fr 1fr" : "1fr", gap: "0 20px" }}>
-        {/* Stage */}
-        <div style={{ marginBottom: 12 }}>
-          <label style={lStyle}>Stage</label>
-          <select style={iStyle} value={stage} onChange={e => handleStageChange(e.target.value)}>
-            {stageOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 36px 1fr", gap: 8, alignItems: "end", marginBottom: 14 }}>
+        <div>
+          <label style={lStyle}>{unit} 1</label>
+          <select style={iStyle} value={p1} onChange={e => { setP1(e.target.value); setP2(""); }}>
+            <option value="">— Select —</option>
+            {participants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
-
-        {/* Group selector — only for group stage in group_knockout */}
-        {isGroupStage && groups.length > 0 && (
-          <div style={{ marginBottom: 12 }}>
-            <label style={lStyle}>Group (optional)</label>
-            <select style={iStyle} value={groupId} onChange={e => setGroupId(e.target.value)}>
-              <option value="">— No group —</option>
-              {groups.map(g => <option key={g.group_id} value={g.group_id}>{g.name}</option>)}
-            </select>
-          </div>
-        )}
+        <div style={{ textAlign: "center", paddingBottom: 8, fontWeight: 900, color: "var(--muted)", fontSize: 11 }}>vs</div>
+        <div>
+          <label style={lStyle}>{unit} 2</label>
+          <select style={iStyle} value={p2} onChange={e => setP2(e.target.value)}>
+            <option value="">— Select —</option>
+            {participants
+              .filter(p => String(p.id) !== p1 && !taken.has(String(p.id)))
+              .map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
       </div>
-
-      {/* Participant selectors */}
-      {participants.length === 0 ? (
-        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
-          No {isTeam ? "teams" : "players"} added yet. Add participants first.
-        </div>
-      ) : pool.length === 0 ? (
-        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
-          No eligible {isTeam ? "teams" : "players"} for this stage — either the
-          group finals aren't finished yet, or everyone who qualified is already
-          placed in a knockout match.
-        </div>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 28px 1fr", gap: 8, alignItems: "end", marginBottom: 14 }}>
-          <div>
-            <label style={lStyle}>{isTeam ? "Team" : "Player"} 1</label>
-            <select style={iStyle} value={p1} onChange={e => setP1(e.target.value)}>
-              <option value="">— Select —</option>
-              {pool.filter(p => String(p.id) !== p2).map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </div>
-          <div style={{ textAlign: "center", paddingBottom: 8, fontWeight: 900, color: "var(--muted)", fontSize: 12 }}>vs</div>
-          <div>
-            <label style={lStyle}>{isTeam ? "Team" : "Player"} 2</label>
-            <select style={iStyle} value={p2} onChange={e => setP2(e.target.value)}>
-              <option value="">— Select —</option>
-              {pool.filter(p => String(p.id) !== p1).map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-      )}
-
-      <div style={{ display: "flex", gap: 8 }}>
-        <button className="btn btn-primary btn-sm" onClick={handleCreate} disabled={busy || !p1 || !p2}>
+      <div style={{ textAlign: "right" }}>
+        <button className="btn btn-primary" onClick={handleCreate} disabled={busy || !p1 || !p2}>
           {busy ? "Creating…" : "Create Match"}
         </button>
-        <button className="btn btn-outline btn-sm" onClick={() => setOpen(false)}>Cancel</button>
       </div>
     </div>
   );
@@ -1721,8 +1531,9 @@ function GroupKnockoutFixtures({
   event, isCompleted = false, numGroups, setNumGroups, qualifiersPerGroup, setQualifiersPerGroup,
   onGenerateGroups, onGenerateKnockout,
   onAction, onSetConfig, onEndMatch, sportKey, participantType,
-  participants = [], isTeamEvent = false, onCreateMatch, onManualGroupSetup, flash,
+  participants = [], isTeamEvent = false, onManualChampionship, onManualGroupSetup, flash,
 }) {
+  const [manualChamp, setManualChamp] = useState(false);
   const allMatches      = event.matches || [];
   const groupMatches    = allMatches.filter(m => m.group_id);
   const knockoutMatches = allMatches.filter(m => !m.group_id);
@@ -1742,29 +1553,18 @@ function GroupKnockoutFixtures({
   const doneGroup  = groupMatches.filter(m => m.status === "done").length;
   const doneKnock  = knockoutMatches.filter(m => m.status === "done").length;
 
-  // Knockout eligibility for the manual match creator:
-  // qualified = winner/loser of a FINISHED group final; minus anyone already
-  // placed in a knockout match. This is what makes the dropdown shrink as
-  // matches are created (8 qualified → create match 1 → 6 remain, etc).
-  const qualifiedIds = new Set(
-    (event.groups || []).flatMap(g => {
-      const final = groupMatches.find(m =>
-        m.group_id === g.group_id && m.stage === "final" && m.status === "done");
-      if (!final) return [];
-      return [final.player_1, final.player_2]
-        .map(p => p?.player_id ?? p?.team_id)
-        .filter(id => id != null)
-        .map(String);
-    })
-  );
-  const placedIds = new Set(
-    knockoutMatches.flatMap(m =>
-      [m.player_1, m.player_2]
-        .map(p => p?.player_id ?? p?.team_id)
-        .filter(id => id != null)
-        .map(String))
-  );
-  const knockoutEligibleIds = new Set([...qualifiedIds].filter(id => !placedIds.has(id)));
+  // Who the championship draws from: each group's final winner, plus its
+  // runner-up when two qualify per group.
+  const qualifiedList = (event.groups || []).flatMap(g => {
+    const final = groupMatches.find(m =>
+      m.group_id === g.group_id && m.stage === "final" && m.status === "done");
+    if (!final) return [];
+    const ps = [final.player_1, final.player_2].filter(Boolean);
+    const out = [ps.find(p => p.is_winner)];
+    if (qualifiersPerGroup >= 2) out.push(ps.find(p => !p.is_winner));
+    return out.filter(Boolean).map(p => ({ id: p.player_id ?? p.team_id, name: p.name }));
+  });
+  const champUnit = isTeamEvent ? "team" : "player";
 
   const NumInput = ({ label, value, setter, min, max }) => (
     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
@@ -1879,15 +1679,34 @@ function GroupKnockoutFixtures({
             </div>
           </div>
 
-          <ConfirmButton
-            className="btn btn-gradient btn-lg"
-            style={{ width: "100%", fontSize: 14 }}
-            label="Generate Semis & Final →"
-            title="Generate semi finals & final?"
-            body="Are you sure you want to generate the semi finals and final from the group results?"
-            confirmLabel="Yes, generate"
-            onConfirm={onGenerateKnockout} />
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <ConfirmButton
+              className="btn btn-gradient btn-lg"
+              style={{ flex: 1, minWidth: 220, fontSize: 14 }}
+              label="Generate Semis & Final →"
+              title="Generate semi finals & final?"
+              body="Are you sure you want to generate the semi finals and final from the group results?"
+              confirmLabel="Yes, generate"
+              onConfirm={onGenerateKnockout} />
+            <button className="btn btn-outline btn-lg" style={{ fontSize: 14 }} onClick={() => setManualChamp(v => !v)}>
+              {manualChamp ? "Cancel" : "🎯 Set Up Manually"}
+            </button>
+          </div>
         </div>
+      )}
+
+      {/* Manual championship draw */}
+      {!isCompleted && manualChamp && (
+        <BracketEditor
+          participants={qualifiedList}
+          unit={champUnit}
+          title="Set Up the Championship"
+          intro={`The ${qualifiedList.length} qualified ${champUnit}s from the group stage. Choose who plays in every match; later rounds fill in as winners advance.`}
+          submitLabel={hasKnockout ? "Replace championship" : "Create championship"}
+          onSubmit={async (order) => { await onManualChampionship(order); setManualChamp(false); }}
+          onBack={() => setManualChamp(false)}
+          flash={flash || (() => {})}
+        />
       )}
 
       {/* Status bar */}
@@ -1906,6 +1725,12 @@ function GroupKnockoutFixtures({
             body="Are you sure you want to regenerate the championship bracket? The current bracket will be replaced."
             confirmLabel="Yes, regenerate" onConfirm={onGenerateKnockout} />
         )}
+        {!isCompleted && hasKnockout && (
+          <button className="btn btn-outline btn-sm" style={{ fontSize: 11, color: "var(--muted)" }}
+            onClick={() => setManualChamp(v => !v)}>
+            {manualChamp ? "Cancel Manual Draw" : "Redraw Championship Manually"}
+          </button>
+        )}
         {!isCompleted && !hasKnockout && (
           <ConfirmButton
             className="btn btn-outline btn-sm" style={{ fontSize: 11, color: "var(--muted)" }}
@@ -1915,19 +1740,6 @@ function GroupKnockoutFixtures({
             confirmLabel="Yes, reset" onConfirm={onGenerateGroups} />
         )}
       </div>
-
-      {/* Manual match creator — hidden once the tournament is completed */}
-      {!isCompleted && onCreateMatch && (
-        <ManualMatchCreator
-          format="group_knockout"
-          groups={event.groups || []}
-          participants={participants}
-          isTeam={isTeamEvent}
-          onCreate={onCreateMatch}
-          flash={flash || (() => {})}
-          eligibleIds={knockoutEligibleIds}
-        />
-      )}
 
       {allGroupsDone ? championshipBlock : null}
       {groupsBlock}

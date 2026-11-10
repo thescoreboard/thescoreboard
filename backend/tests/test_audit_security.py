@@ -47,13 +47,6 @@ def world():
     engine.dispose()
 
 
-def test_cannot_delete_other_users_player_profile(world):
-    c, A, B, *_ = world
-    pid = c.put("/api/auth/player-profile", json={"name": "Vic", "phone": "1"}, headers=A).json()["player_id"]
-    assert c.delete(f"/api/players/{pid}", headers=B).status_code == 403
-    assert c.delete(f"/api/players/{pid}", headers=A).status_code == 200
-
-
 def test_orphaned_team_not_deletable_by_anyone_and_org_delete_cleans_up(world):
     c, A, B, org_a, org_b, tour = world
     tid = c.post(f"/api/orgs/{org_a}/teams", json={"name": "X", "contact_phone": "9"}, headers=A).json()["team_id"]

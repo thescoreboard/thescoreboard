@@ -16,7 +16,7 @@ import { F } from '../../src/theme';
 export default function LoginScreen() {
   const { theme }                   = useTheme();
   const router                      = useRouter();
-  const { setToken, onboarded }     = useAuthStore();
+  const { setToken }                = useAuthStore();
   const c = theme.colors;
 
   const [email,    setEmail]    = useState('');
@@ -60,29 +60,11 @@ export default function LoginScreen() {
   // ── Post-login routing ────────────────────────────────────────────────────
   const afterLogin = async () => {
     try {
-      // 1. Consume the CTA intent set before we arrived here
-      const intent = await storage.getItem('tsb_intent');
-      if (intent) {
-        await storage.deleteItem('tsb_intent');
-        const { setMode, user } = useAuthStore.getState();
-        // Only honour 'organiser' intent if the account actually has an org role;
-        // otherwise fall back to player so a brand-new account isn't stranded.
-        const hasOrgRole = Array.isArray(user?.roles) && user.roles.includes('organiser');
-        if (intent === 'organiser' && hasOrgRole) {
-          await setMode('organiser');
-        } else {
-          await setMode('player');
-        }
-      }
-
-      // 2. Navigate — honour tsb_next deep-link, then onboarding, then tabs
-      const freshOnboarded = useAuthStore.getState().onboarded;
+      // Honour a saved deep-link, otherwise land on the tabs
       const next = await storage.getItem('tsb_next');
       if (next) {
         await storage.deleteItem('tsb_next');
         router.replace(next as any);
-      } else if (!freshOnboarded) {
-        router.replace('/onboarding' as any);
       } else {
         router.replace('/(tabs)' as any);
       }

@@ -80,11 +80,6 @@ export default function TournamentCard({ tournament: t, onClick }) {
             overflow: "hidden", display: "-webkit-box",
             WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
           }}>{t.name}</h3>
-          {t.org_name && (
-            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3, fontWeight: 500 }}>
-              by {t.org_name}
-            </div>
-          )}
         </div>
 
         {/* Meta: location */}
