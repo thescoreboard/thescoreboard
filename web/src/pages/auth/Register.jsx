@@ -58,7 +58,7 @@ export default function Register() {
   const passwordsMatch = confirmPassword.length > 0 && form.password === confirmPassword;
   const passwordsMismatch = confirmPassword.length > 0 && form.password !== confirmPassword;
 
-  /** New accounts land on the organiser dashboard (where they create their first organisation),
+  /** New accounts land on the organiser dashboard, where they can create a tournament straight away,
    *  or on the page they were redirected from (tsb_next). */
   async function postRegisterRedirect() {
     try {

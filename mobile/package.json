@@ -9,13 +9,16 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@api.video/react-native-livestream": "2.0.2",
     "@expo-google-fonts/space-grotesk": "^0.2.3",
     "@expo-google-fonts/unbounded": "^0.2.3",
     "@react-navigation/native": "^6.1.17",
     "date-fns": "^3.6.0",
     "expo": "~51.0.0",
+    "expo-auth-session": "~5.5.2",
     "expo-clipboard": "~6.0.3",
     "expo-constants": "~16.0.2",
+    "expo-dev-client": "~4.0.29",
     "expo-file-system": "~17.0.1",
     "expo-font": "~12.0.7",
     "expo-haptics": "~13.0.1",
@@ -29,6 +32,7 @@
     "expo-sharing": "~12.0.1",
     "expo-splash-screen": "~0.27.5",
     "expo-status-bar": "~1.12.1",
+    "expo-web-browser": "~13.0.3",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "react-native": "0.74.1",
@@ -38,10 +42,7 @@
     "react-native-screens": "3.31.1",
     "react-native-svg": "15.2.0",
     "react-native-web": "~0.19.10",
-    "zustand": "^4.5.2",
-    "expo-auth-session": "~5.5.2",
-    "expo-web-browser": "~13.0.3",
-    "expo-dev-client": "~4.0.29"
+    "zustand": "^4.5.2"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",

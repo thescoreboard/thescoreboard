@@ -493,6 +493,7 @@ export default function EventWorkspaceScreen() {
   const [playerName,    setPlayerName]    = useState('');
   const [playerAge,     setPlayerAge]     = useState('');
   const [playerGender,  setPlayerGender]  = useState('Male');
+  const [playerSkill,   setPlayerSkill]   = useState('');   // '' = no seed
 
   // Add match manually (when fixtures already exist)
   const [showAddMatch,  setShowAddMatch]  = useState(false);
@@ -606,9 +607,9 @@ export default function EventWorkspaceScreen() {
   const handleAddPlayer = async () => {
     if (!playerName.trim()) { Alert.alert('Name is required'); return; }
     try {
-      const p = await apiCreatePlayer(token!, { name: playerName.trim(), age: parseInt(playerAge) || null, gender: playerGender });
+      const p = await apiCreatePlayer(token!, { name: playerName.trim(), age: parseInt(playerAge) || null, gender: playerGender, seed_level: playerSkill || null });
       await apiAddPlayerToEvent(token!, currentEvent.event_id, p.player_id);
-      setPlayerName(''); setPlayerAge(''); setShowAddPlayer(false);
+      setPlayerName(''); setPlayerAge(''); setPlayerSkill(''); setShowAddPlayer(false);
       load(); showFlash('Player added!');
     } catch (e: any) { Alert.alert('Error', e.message); }
   };
@@ -952,6 +953,16 @@ export default function EventWorkspaceScreen() {
                       style={{ borderRadius: 8, borderWidth: 1, borderColor: c.border, paddingHorizontal: 12, paddingVertical: 7,
                         backgroundColor: playerGender === g ? c.ink : c.elevated }}>
                       <Text style={{ fontSize: 12, fontWeight: '700', color: playerGender === g ? c.bg : c.muted }}>{g}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>Skill level (optional)</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {[['', 'No seed'], ['beginner', 'Beginner'], ['intermediate', 'Intermediate'], ['advanced', 'Advanced'], ['pro', 'Pro']].map(([v, l]) => (
+                    <TouchableOpacity key={v || 'none'} onPress={() => setPlayerSkill(v)}
+                      style={{ borderRadius: 8, borderWidth: 1, borderColor: c.border, paddingHorizontal: 12, paddingVertical: 7,
+                        backgroundColor: playerSkill === v ? c.ink : c.elevated }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: playerSkill === v ? c.bg : c.muted }}>{l}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>

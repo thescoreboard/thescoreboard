@@ -1,6 +1,6 @@
 /**
- * Tournament registration screen — mirrors TournamentRegister.jsx
- * Steps: auth → profile → select event → form → success
+ * Tournament registration screen. No account needed — anyone can register.
+ * Steps: select event → form → success
  */
 import React, { useState, useEffect } from 'react';
 import {
@@ -10,14 +10,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTheme } from '../../src/hooks/useTheme';
-import { useAuthStore } from '../../src/store/auth';
 import { F } from '../../src/theme';
 import {
-  apiGetTournamentBySlug, apiGetPlayerProfile, apiSavePlayerProfile,
+  apiGetTournamentBySlug,
   apiPublicRegisterIndividual, apiPublicRegisterTeam,
 } from '../../src/api/client';
 
-type Step = 'auth' | 'profile' | 'select' | 'form' | 'success';
+type Step = 'select' | 'form' | 'success';
 
 const ROLES = ['player', 'captain', 'vice_captain'];
 
@@ -25,12 +24,10 @@ export default function RegisterScreen() {
   const { slug }   = useLocalSearchParams<{ slug: string }>();
   const { theme }  = useTheme();
   const router     = useRouter();
-  const { token, isLoggedIn } = useAuthStore();
   const c = theme.colors;
 
   const [tournament, setTournament] = useState<any>(null);
-  const [profile,    setProfile]    = useState<any>(null);
-  const [step,       setStep]       = useState<Step>('auth');
+  const [step,       setStep]       = useState<Step>('select');
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const [loading,    setLoading]    = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -50,25 +47,13 @@ export default function RegisterScreen() {
         // API returns { tournament: {...}, events: [...] } — flatten so t.name / t.status work directly
         const t = data.tournament ? { ...data.tournament, events: data.events ?? [] } : data;
         setTournament(t);
-        if (isLoggedIn()) {
-          const p = await apiGetPlayerProfile(token!).catch(() => null);
-          setProfile(p);
-          if (p) {
-            setName(p.name ?? '');
-            setPhone(p.phone ?? '');
-            setAge(p.age != null ? String(p.age) : '');
-            setGender(p.gender ?? 'Male');
-          }
-          // If only one event — skip the select screen and go straight to the form
-          const events = t.events ?? [];
-          if (events.length === 1) {
-            setSelectedEvent(events[0]);
-            setStep('form');
-          } else {
-            setStep('select');
-          }
+        // If only one event — skip the select screen and go straight to the form
+        const events = t.events ?? [];
+        if (events.length === 1) {
+          setSelectedEvent(events[0]);
+          setStep('form');
         } else {
-          setStep('auth');
+          setStep('select');
         }
       } catch (e: any) {
         Alert.alert('Error', e?.message ?? 'Could not load tournament');
@@ -77,7 +62,7 @@ export default function RegisterScreen() {
       }
       setLoading(false);
     })();
-  }, [slug, token]);
+  }, [slug]);
 
   const participantType = selectedEvent?.participant_type ?? 'individual';
 
@@ -159,21 +144,6 @@ export default function RegisterScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ padding:20 }}>
-        {/* Auth step */}
-        {step === 'auth' && (
-          <View style={{ gap:12 }}>
-            <Text style={{ fontSize:20, fontWeight:'900', color:c.ink, marginBottom:8 }}>Sign in to Register</Text>
-            <TouchableOpacity onPress={() => router.push(`/(auth)/login`)}
-              style={[s.btn, { backgroundColor:c.primary }]}>
-              <Text style={s.btnText}>Login</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => router.push(`/(auth)/register`)}
-              style={[s.btn, { backgroundColor:c.elevated, borderWidth:1.5, borderColor:c.border }]}>
-              <Text style={{ fontFamily: F.bold, color:c.ink, fontSize:12, textTransform:'uppercase', letterSpacing:0.5 }}>Create Account</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
         {/* Select event step */}
         {step === 'select' && (
           <View>

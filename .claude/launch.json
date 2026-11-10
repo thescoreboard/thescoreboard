@@ -19,21 +19,21 @@
       "name": "frontend",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "cwd": "frontend",
+      "cwd": "web",
       "port": 5173
     },
     {
       "name": "frontend-preview",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--", "--port", "5199", "--strictPort"],
-      "cwd": "frontend",
+      "cwd": "web",
       "port": 5199
     },
     {
       "name": "frontend-preview2",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "cwd": "frontend",
+      "cwd": "web",
       "autoPort": true
     }
   ]

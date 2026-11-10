@@ -1,5 +1,5 @@
 /**
- * WebSocket hook — mirrors frontend/src/hooks/useTournamentSocket.js
+ * WebSocket hook — same protocol as the inline socket in web/src/pages/TournamentPublic.jsx
  * Reconnects with exponential back-off (3s → 30s). Pings every 20s.
  */
 import { useEffect, useRef, useCallback } from 'react';

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { getMyOrgs, createOrg, createTournament } from "../../api/client";
+import { getMyOrgs, getMe, createOrg, createTournament } from "../../api/client";
 import PageLoader from "../../components/shared/PageLoader";
 import CitySelect, { CITY_STATE_MAP } from "../../components/shared/CitySelect";
 import VenuePicker from "../../components/shared/VenuePicker";
@@ -138,9 +138,7 @@ export default function CreateTournament() {
   // ── Org state ────────────────────────────────────────────────
   const [loadingOrgs,    setLoadingOrgs]    = useState(true);
   const [activeOrg,      setActiveOrg]      = useState(null);
-  const [orgGateForm,    setOrgGateForm]    = useState({ name: "", city: "" });
-  const [orgGateError,   setOrgGateError]   = useState("");
-  const [orgGateLoading, setOrgGateLoading] = useState(false);
+  const [orgError,       setOrgError]       = useState("");
 
   // ── Wizard state ─────────────────────────────────────────────
   const [step,         setStep]         = useState(FIRST_STEP);
@@ -157,26 +155,21 @@ export default function CreateTournament() {
   const [venueLng,  setVenueLng]  = useState(null);
   const [venueObj,  setVenueObj]  = useState(null);  // full picker value
 
+  // Organisers never manage orgs: use their existing one, or create a personal one silently.
   useEffect(() => {
-    getMyOrgs()
-      .then(orgs => { if (orgs?.length) setActiveOrg(orgs[0]); })
-      .catch(console.error)
-      .finally(() => setLoadingOrgs(false));
+    (async () => {
+      try {
+        const orgs = await getMyOrgs();
+        if (orgs?.length) { setActiveOrg(orgs[0]); return; }
+        const me = await getMe();
+        setActiveOrg(await createOrg({ name: me?.name || "My Tournaments", city: "", state: "" }));
+      } catch (e) {
+        setOrgError(e.message || "Couldn't set up your account.");
+      } finally {
+        setLoadingOrgs(false);
+      }
+    })();
   }, []);
-
-  const handleCreateOrgFromGate = async () => {
-    if (!orgGateForm.name.trim()) return setOrgGateError("Organisation name is required.");
-    setOrgGateLoading(true); setOrgGateError("");
-    try {
-      const autoState = CITY_STATE_MAP[orgGateForm.city] || "";
-      const org = await createOrg({ name: orgGateForm.name.trim(), city: orgGateForm.city, state: autoState });
-      setActiveOrg(org);
-    } catch (e) {
-      setOrgGateError(e.message || "Failed to create organisation.");
-    } finally {
-      setOrgGateLoading(false);
-    }
-  };
 
   // ── Sport helpers ────────────────────────────────────────────
   const sl = (k) => SPORTS.find(s => s.key === k)?.label || k;
@@ -343,40 +336,14 @@ export default function CreateTournament() {
       </header>
 
       {!activeOrg ? (
-        /* ── ORG GATE ── */
-        <div style={{ maxWidth: 480, margin: "48px auto", padding: "0 24px" }} className="create-content">
-          <div className="card" style={{ textAlign: "center" }}>
-            <div style={{ width: 52, height: 52, borderRadius: 8, background: "var(--elevated)", margin: "0 auto 12px" }} />
-            <div className="card-title" style={{ marginBottom: 8 }}>One Quick Step First</div>
-            <p style={{ fontSize: 13, color: c.muted, marginBottom: 28 }}>
-              Create an organisation before creating a tournament.
+        <div style={{ maxWidth: 480, margin: "48px auto", padding: "0 24px", textAlign: "center" }} className="create-content">
+          <div className="card">
+            <div className="card-title" style={{ marginBottom: 8 }}>Something went wrong</div>
+            <p style={{ fontSize: 13, color: c.muted, marginBottom: 20 }}>
+              {orgError || "We couldn't set up your account."} Please try again.
             </p>
-            {orgGateError && (
-              <div style={{ background: "var(--red-dim)", border: "1px solid rgba(229,62,62,0.3)", borderRadius: 6, padding: "10px 14px", marginBottom: 16, fontFamily: "var(--font-display)", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: .5, color: "var(--red)", textAlign: "left" }}>
-                {orgGateError}
-              </div>
-            )}
-            <div className="field" style={{ textAlign: "left" }}>
-              <label>Organisation Name *</label>
-              <input className="input" autoFocus placeholder="e.g. Tenx Sports Club"
-                value={orgGateForm.name}
-                onChange={e => setOrgGateForm(f => ({ ...f, name: e.target.value }))}
-                onKeyDown={e => e.key === "Enter" && handleCreateOrgFromGate()} />
-            </div>
-            <div style={{ textAlign: "left" }}>
-              <CitySelect city={orgGateForm.city} onChange={city => setOrgGateForm(f => ({ ...f, city }))} />
-            </div>
-            {orgGateForm.city && (
-              <div className="field" style={{ textAlign: "left" }}>
-                <label>State</label>
-                <input className="input" value={CITY_STATE_MAP[orgGateForm.city] || ""} readOnly
-                  style={{ color: c.muted, cursor: "default", background: "var(--elevated)" }} />
-              </div>
-            )}
-            <button className="btn btn-gradient btn-lg" style={{ width: "100%", marginTop: 8, fontSize: 13 }}
-              onClick={handleCreateOrgFromGate} disabled={orgGateLoading}>
-              {orgGateLoading ? "Creating…" : "Create Organisation →"}
-            </button>
+            <button className="btn btn-gradient btn-lg" style={{ width: "100%", fontSize: 13 }}
+              onClick={() => window.location.reload()}>Try again</button>
             <div style={{ fontSize: 12, color: c.muted, marginTop: 16, cursor: "pointer" }}
               onClick={() => navigate("/organiser")}>
               ← Back to dashboard

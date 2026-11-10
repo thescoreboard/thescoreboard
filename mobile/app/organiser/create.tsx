@@ -67,7 +67,7 @@ const MULTI_STEPS  = ['Type', 'Sports', 'Details', 'Review'];
 export default function CreateTournamentScreen() {
   const { theme } = useTheme();
   const router    = useRouter();
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
   const c         = theme.colors;
 
   // ── Wizard navigation ─────────────────────────────────────────────────────
@@ -110,7 +110,7 @@ export default function CreateTournamentScreen() {
       if (orgs.length > 0) {
         orgId = orgs[0].org_id;
       } else {
-        const org = await apiCreateOrg(token!, { name: name.trim() });
+        const org = await apiCreateOrg(token!, { name: user?.name || name.trim() });
         orgId = org.org_id;
       }
 
@@ -166,7 +166,7 @@ export default function CreateTournamentScreen() {
         venue:          venueObj?.name  || null,
         venue_lat:      venueObj?.lat   ?? null,
         venue_lng:      venueObj?.lng   ?? null,
-        is_published:   true,
+        is_published:   false,
         is_multi_sport: isMulti,
         events,
       };

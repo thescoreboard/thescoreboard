@@ -1,8 +1,8 @@
 /**
- * Home screen — role-aware.
+ * Home screen.
  *   Guest     → Spotlight discovery page (warm cream, featured hero + rails)
- *   Player    → personalised feed (4 category cards · Near You · Match Updates · Closing Soon · Recently Viewed)
  *   Organiser → quick-create + live tournament feed
+ * There is no player account: only organisers sign in.
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -15,9 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import { useTheme }    from '../../src/hooks/useTheme';
 import { useAuthStore } from '../../src/store/auth';
-import { apiGetHomepage, apiGetMyTournaments, apiGetDashboard } from '../../src/api/client';
-import { getRecentlyViewed, RecentTournament } from '../../src/utils/recentlyViewed';
-import { storage } from '../../src/utils/storage';
+import { apiGetHomepage, apiGetDashboard } from '../../src/api/client';
 import TournamentCard from '../../src/components/shared/TournamentCard';
 import { F, SPORT_COLORS, SPORT_LABELS, STATUS_LABELS, STATUS_COLORS, SPORT_ICONS } from '../../src/theme';
 
@@ -34,11 +32,6 @@ const PRIMARY = '#FF6B35';
 const GREEN   = '#22c55e';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
-
-function cityMatch(t: any, city: string): boolean {
-  if (!city) return false;
-  return (t.location ?? '').toLowerCase().includes(city.toLowerCase());
-}
 
 const sportOf = (t: any): string => t.sport_key ?? t.events?.[0]?.sport_key ?? '';
 const cityOf  = (t: any): string => t.city ?? t.location ?? '';
@@ -289,53 +282,6 @@ const mc = StyleSheet.create({
   loc:        { fontSize:11 },
 });
 
-// ─── Recently viewed card ────────────────────────────────────────────────────
-
-function RecentCard({ t, onPress }: { t: RecentTournament; onPress: () => void }) {
-  const { theme } = useTheme();
-  const c = theme.colors;
-  const accent = SPORT_COLORS[t.sportKey] ?? '#888';
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [rvc.card, { backgroundColor: c.elevated, borderColor: c.border, borderLeftColor: accent, opacity: pressed ? 0.8 : 1 }]}
-    >
-      <Text style={[rvc.sport, { fontFamily: F.display, color: accent }]}>{SPORT_LABELS[t.sportKey] ?? t.sportKey}</Text>
-      <Text style={[rvc.name, { fontFamily: F.bold, color: c.ink }]} numberOfLines={2}>{t.name}</Text>
-      <Text style={[rvc.status, { fontFamily: F.body, color: c.muted }]}>{STATUS_LABELS[t.status] ?? t.status}</Text>
-    </Pressable>
-  );
-}
-const rvc = StyleSheet.create({
-  card:   { width:170, borderRadius:12, borderWidth:1.5, borderLeftWidth:4, padding:14, marginRight:10, gap:6 },
-  sport:  { fontSize:9, fontWeight:'800', textTransform:'uppercase', letterSpacing:0.5 },
-  name:   { fontSize:13, fontWeight:'700', lineHeight:18 },
-  status: { fontSize:11 },
-});
-
-// ─── Category card (2×2 grid) ────────────────────────────────────────────────
-
-function CategoryCard({ label, count, accent, onPress }: { label:string; count:number; accent:string; onPress:()=>void }) {
-  const { theme } = useTheme();
-  const c = theme.colors;
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [ccat.card, { backgroundColor: c.surface, borderColor: accent + '40', borderLeftColor: accent, opacity: pressed ? 0.85 : 1 }]}
-    >
-      <Text style={[ccat.count, { fontFamily: F.display, color: accent }]}>{count}</Text>
-      <Text style={[ccat.label, { fontFamily: F.semi, color: c.muted }]}>{label}</Text>
-      <View style={[ccat.bar, { backgroundColor: accent }]} />
-    </Pressable>
-  );
-}
-const ccat = StyleSheet.create({
-  card:  { flex:1, borderRadius:12, borderWidth:1.5, borderLeftWidth:4, padding:16, minHeight:92, justifyContent:'space-between' },
-  count: { fontSize:32, fontWeight:'900', letterSpacing:-1, lineHeight:36 },
-  label: { fontSize:11, letterSpacing:0, marginTop:4 },
-  bar:   { height:2, width:24, borderRadius:2, marginTop:8 },
-});
-
 // ─── Section header ───────────────────────────────────────────────────────────
 
 function SectionHead({ label, title, count, accent }: { label?:string; title:string; count?:number; accent?:string }) {
@@ -579,50 +525,35 @@ const os = StyleSheet.create({
 export default function HomeScreen() {
   const { theme, toggle } = useTheme();
   const router            = useRouter();
-  const { isLoggedIn, mode, preferences, user, token } = useAuthStore();
+  const { isLoggedIn, user, token } = useAuthStore();
   const c = theme.colors;
 
-  const loggedIn    = isLoggedIn();
-  const isPlayer    = loggedIn && mode === 'player';
-  const isOrganiser = loggedIn && mode === 'organiser';
+  const loggedIn = isLoggedIn();
 
   const [data,       setData]       = useState<any>(null);
   const [myTourneys, setMyTourneys] = useState<any[]>([]);
-  const [recents,    setRecents]    = useState<RecentTournament[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadVersionRef = useRef(0);
-  const scrollRef      = useRef<ScrollView>(null);
-  const sectionY       = useRef<Record<string, number>>({});
 
   const load = useCallback(async () => {
     const version = ++loadVersionRef.current;
     try {
-      const personalPromise = (loggedIn && token)
-        ? (isOrganiser ? apiGetDashboard(token) : apiGetMyTournaments(token))
-        : Promise.resolve(null);
+      const personalPromise = (loggedIn && token) ? apiGetDashboard(token) : Promise.resolve(null);
 
-      const [homeRes, rv, personalData] = await Promise.all([
+      const [homeRes, personalData] = await Promise.all([
         apiGetHomepage(),
-        getRecentlyViewed(),
         personalPromise,
       ]);
 
       if (version !== loadVersionRef.current) return;
 
       setData(homeRes);
-      setRecents(rv);
 
       if (personalData) {
-        if (isOrganiser) {
-          const orgs: any[] = personalData?.orgs ?? [];
-          setMyTourneys(orgs.flatMap((o: any) =>
-            (o.tournaments ?? []).map((t: any) => ({ ...t, org_name: o.name, org_id: o.org_id }))
-          ));
-        } else {
-          setMyTourneys(Array.isArray(personalData) ? personalData : personalData?.tournaments ?? []);
-        }
+        const orgs: any[] = personalData?.orgs ?? [];
+        setMyTourneys(orgs.flatMap((o: any) => (o.tournaments ?? []).map((t: any) => ({ ...t, org_id: o.org_id }))));
       }
     } catch {}
     finally {
@@ -631,26 +562,17 @@ export default function HomeScreen() {
         setRefreshing(false);
       }
     }
-  }, [loggedIn, token, isOrganiser]);
+  }, [loggedIn, token]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { const id = setInterval(load, 20000); return () => clearInterval(id); }, [load]);
 
   const trending: any[]   = data?.trending ?? [];
-  const sports: any[]     = data?.sports   ?? [];
-  const totalLive: number = data?.total_live_matches ?? 0;
-  const city              = preferences?.city ?? '';
 
   const liveNow     = trending.filter(t => t.status === 'live' || t.status === 'fixtures');
-  const nearYou     = city ? trending.filter(t => cityMatch(t, city)) : [];
   const closingSoon = trending.filter(t => t.status === 'registration');
   const featured    = liveNow[0] ?? closingSoon[0] ?? null;
   const firstName   = user?.name?.split(' ')[0] ?? '';
-
-  const scrollTo = (key: string) => {
-    const y = sectionY.current[key];
-    if (y != null) scrollRef.current?.scrollTo({ y, animated: true });
-  };
 
   // ── Loading state ─────────────────────────────────────────────────────────
   if (loading) {
@@ -681,11 +603,6 @@ export default function HomeScreen() {
         {/* Headline + city chip */}
         <View style={gs.headlineRow}>
           <Text style={gs.headline}>Find your{'\n'}next match</Text>
-          <Pressable style={gs.cityChip}>
-            <IconPin size={13} color={PRIMARY} />
-            <Text style={gs.cityTxt}>{city || 'Near You'}</Text>
-            <IconChevron size={12} color={WARM.muted} />
-          </Pressable>
         </View>
 
         {/* Scrollable content */}
@@ -730,22 +647,10 @@ export default function HomeScreen() {
         >
           <View style={gs.pinnedRow}>
             <Pressable
-              onPress={async () => {
-                await storage.setItem('tsb_intent', 'player');
-                router.push('/(auth)/register' as any);
-              }}
+              onPress={() => router.push('/(auth)/register' as any)}
               style={({ pressed }) => [gs.ctaPrimary, { opacity: pressed ? 0.9 : 1 }]}
             >
-              <Text style={gs.ctaPrimaryTxt}>REGISTER TO PLAY</Text>
-            </Pressable>
-            <Pressable
-              onPress={async () => {
-                await storage.setItem('tsb_intent', 'organiser');
-                router.push('/(auth)/login');
-              }}
-              style={({ pressed }) => [gs.ctaSecondary, { opacity: pressed ? 0.9 : 1 }]}
-            >
-              <Text style={gs.ctaSecondaryTxt}>ORGANISE</Text>
+              <Text style={gs.ctaPrimaryTxt}>START ORGANISING</Text>
             </Pressable>
           </View>
         </LinearGradient>
@@ -754,7 +659,7 @@ export default function HomeScreen() {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // LOGGED-IN VIEWS (player / organiser)
+  // LOGGED-IN VIEW (organiser)
   // ══════════════════════════════════════════════════════════════════════════
   return (
     <SafeAreaView style={{ flex:1, backgroundColor: c.bg }}>
@@ -767,119 +672,24 @@ export default function HomeScreen() {
           <TouchableOpacity onPress={toggle} style={[s.themeBtn, { borderColor: c.border }]}>
             <Text style={[s.themeBtnTxt, { color: c.muted }]}>{theme.isDark ? 'LIGHT' : 'DARK'}</Text>
           </TouchableOpacity>
-          {isOrganiser && (
-            <TouchableOpacity onPress={() => router.push('/organiser/create' as any)} style={[s.signInBtn, { backgroundColor: c.primary }]}>
-              <Text style={[s.signInTxt, { fontFamily: F.display }]}>+ New</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity onPress={() => router.push('/organiser/create' as any)} style={[s.signInBtn, { backgroundColor: c.primary }]}>
+            <Text style={[s.signInTxt, { fontFamily: F.display }]}>+ New</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
       <ScrollView
-        ref={scrollRef}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={c.primary} />}
       >
-        {/* ── PLAYER VIEW ── */}
-        {isPlayer && (
-          <>
-            {/* Greeting */}
-            <View style={[s.greetWrap, { paddingHorizontal:16, paddingTop:18, paddingBottom:4 }]}>
-              <View>
-                <Text style={[s.greetHi, { fontFamily: F.semi, color: c.muted }]}>Good day,</Text>
-                <Text style={[s.greetName, { fontFamily: F.display, color: c.ink }]}>{firstName || 'Player'}</Text>
-              </View>
-              {city ? (
-                <View style={[s.cityPill, { backgroundColor: c.elevated, borderColor: c.border }]}>
-                  <Text style={[s.cityTxt, { fontFamily: F.display, color: c.muted }]}>{city}</Text>
-                </View>
-              ) : null}
-            </View>
-
-            {totalLive > 0 && (
-              <View style={[s.livePulse, { backgroundColor: c.primary + '14', borderColor: c.primary + '40' }]}>
-                <View style={[s.liveDot, { backgroundColor: c.primary }]} />
-                <Text style={[s.livePulseText, { fontFamily: F.semi, color: c.primary }]}>
-                  {totalLive} match{totalLive !== 1 ? 'es' : ''} live right now
-                </Text>
-              </View>
-            )}
-
-            {/* 2×2 category grid */}
-            <View style={s.grid}>
-              <View style={s.gridRow}>
-                <CategoryCard label="Match Updates"  count={liveNow.length}     accent={c.primary} onPress={() => scrollTo('match-updates')} />
-                <CategoryCard label="Near You"       count={nearYou.length}     accent="#22c55e"   onPress={() => scrollTo('near-you')} />
-              </View>
-              <View style={s.gridRow}>
-                <CategoryCard label="Closing Soon"   count={closingSoon.length} accent="#D97706"   onPress={() => scrollTo('closing-soon')} />
-                <CategoryCard label="Recently Viewed" count={recents.length}    accent="#38bdf8"   onPress={() => scrollTo('recently-viewed')} />
-              </View>
-            </View>
-
-            {nearYou.length > 0 && (
-              <View onLayout={e => { sectionY.current['near-you'] = e.nativeEvent.layout.y; }}>
-                <SectionHead label="Your location" title="Near you" count={nearYou.length} accent="#22c55e" />
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal:16 }}>
-                  {nearYou.slice(0, 8).map((t: any) => (
-                    <MiniCard key={t.tournament_id} t={t} onPress={() => router.push(`/t/${t.slug}` as any)} />
-                  ))}
-                </ScrollView>
-              </View>
-            )}
-
-            {liveNow.length > 0 && (
-              <View onLayout={e => { sectionY.current['match-updates'] = e.nativeEvent.layout.y; }}>
-                <SectionHead label="Happening now" title="Match updates" count={liveNow.length} accent={c.primary} />
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal:16 }}>
-                  {liveNow.slice(0, 8).map((t: any) => (
-                    <MiniCard key={t.tournament_id} t={t} onPress={() => router.push(`/t/${t.slug}` as any)} />
-                  ))}
-                </ScrollView>
-              </View>
-            )}
-
-            {closingSoon.length > 0 && (
-              <View onLayout={e => { sectionY.current['closing-soon'] = e.nativeEvent.layout.y; }}>
-                <SectionHead label="Register now" title="Closing soon" count={closingSoon.length} accent="#D97706" />
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal:16 }}>
-                  {closingSoon.slice(0, 8).map((t: any) => (
-                    <MiniCard key={t.tournament_id} t={t} onPress={() => router.push(`/t/${t.slug}` as any)} />
-                  ))}
-                </ScrollView>
-              </View>
-            )}
-
-            {recents.length > 0 && (
-              <View onLayout={e => { sectionY.current['recently-viewed'] = e.nativeEvent.layout.y; }}>
-                <SectionHead label="Pick up where you left off" title="Recently viewed" count={recents.length} accent="#38bdf8" />
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal:16 }}>
-                  {recents.map(t => (
-                    <RecentCard key={t.slug} t={t} onPress={() => router.push(`/t/${t.slug}` as any)} />
-                  ))}
-                </ScrollView>
-              </View>
-            )}
-
-            <TouchableOpacity
-              onPress={() => router.push('/(tabs)/explore' as any)}
-              style={[s.exploreCta, { backgroundColor: c.primary }]}
-            >
-              <Text style={[s.exploreCtaText, { fontFamily: F.bold }]}>Browse all tournaments</Text>
-            </TouchableOpacity>
-          </>
-        )}
-
         {/* ── ORGANISER VIEW ── */}
-        {isOrganiser && (
-          <OrganiserHome
-            myTourneys={myTourneys}
-            liveNow={liveNow}
-            firstName={firstName}
-            c={c}
-            router={router}
-          />
-        )}
+        <OrganiserHome
+          myTourneys={myTourneys}
+          liveNow={liveNow}
+          firstName={firstName}
+          c={c}
+          router={router}
+        />
 
         <View style={{ height: 48 }} />
       </ScrollView>

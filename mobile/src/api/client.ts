@@ -1,5 +1,5 @@
 /**
- * API client — mirrors frontend/src/api/client.js exactly.
+ * API client — same endpoints as web/src/api/client.js (organiser/public subset).
  * Token is passed in rather than read from localStorage so it works
  * with the zustand auth store and expo-secure-store.
  */
@@ -123,10 +123,6 @@ export const apiLogin      = (d: any)         => request('POST', '/auth/login', 
 export const apiGoogleAuth = (accessToken: string) =>
   request('POST', '/auth/google', null, { access_token: accessToken });
 export const apiGetMe = (token: string)       => request('GET',  '/auth/me', token);
-export const apiGetPlayerProfile = (token: string) =>
-  request('GET',  '/auth/player-profile', token);
-export const apiSavePlayerProfile = (token: string, d: any) =>
-  request('PUT',  '/auth/player-profile', token, d);
 
 // ── Dashboard ───────────────────────────────────────────────────
 export const apiGetDashboard = (token: string) => request('GET', '/dashboard', token);
@@ -134,15 +130,10 @@ export const apiGetDashboard = (token: string) => request('GET', '/dashboard', t
 // ── Organisations ───────────────────────────────────────────────
 export const apiCreateOrg    = (token: string, d: any) => request('POST',   '/orgs/', token, d);
 export const apiGetMyOrgs    = (token: string)          => request('GET',    '/orgs/', token);
-export const apiDeleteOrg    = (token: string, id: number) => request('DELETE', `/orgs/${id}`, token);
 
 // ── Tournaments ─────────────────────────────────────────────────
 export const apiCreateTournament = (token: string, orgId: number, d: any) =>
   request('POST',   `/orgs/${orgId}/tournaments`, token, d);
-export const apiGetTournaments   = (token: string, orgId: number) =>
-  request('GET',    `/orgs/${orgId}/tournaments`, token);
-export const apiGetTournament    = (token: string, tId: number) =>
-  request('GET',    `/orgs/tournaments/${tId}`, token);
 export const apiUpdateTournament = (token: string, orgId: number, tId: number, d: any) =>
   request('PATCH',  `/orgs/${orgId}/tournaments/${tId}`, token, d);
 export const apiDeleteTournament = (token: string, orgId: number, tId: number) =>
@@ -161,22 +152,12 @@ export const apiDeleteSponsor = (token: string, tId: number, sId: number) =>
   request('DELETE', `/orgs/tournaments/${tId}/sponsors/${sId}`, token);
 
 // ── Events ──────────────────────────────────────────────────────
-export const apiCreateEvent   = (token: string, tId: number, d: any) =>
-  request('POST',  `/tournaments/${tId}/events`, token, d);
-export const apiGetEvents     = (token: string, tId: number) =>
-  request('GET',   `/tournaments/${tId}/events`, token);
-export const apiUpdateEvent   = (token: string, eId: number, d: any) =>
-  request('PATCH', `/events/${eId}`, token, d);
 export const apiConfigureEvent = (token: string, eId: number, d: any) =>
   request('POST',  `/events/${eId}/configure`, token, d);
 
 // ── Players ─────────────────────────────────────────────────────
 export const apiCreatePlayer  = (token: string, d: any, orgId?: number) =>
   request('POST',   `/players${orgId ? `?org_id=${orgId}` : ''}`, token, d);
-export const apiGetPlayers    = (token: string, orgId?: number) =>
-  request('GET',    `/players${orgId ? `?org_id=${orgId}` : ''}`, token);
-export const apiDeletePlayer  = (token: string, id: number) =>
-  request('DELETE', `/players/${id}`, token);
 export const apiAddPlayerToEvent = (token: string, eId: number, pId: number, gId?: number, seed?: number) => {
   let url = `/players/events/${eId}/participants?player_id=${pId}`;
   if (gId)        url += `&group_id=${gId}`;
@@ -208,8 +189,6 @@ export const apiGenerateKnockoutFromGroups = (token: string, eId: number, qpg: n
   request('POST', `/events/${eId}/generate-knockout-from-groups?qualifiers_per_group=${qpg}&third_place=${thirdPlace}`, token);
 
 // ── Matches ─────────────────────────────────────────────────────
-export const apiGetMatches     = (token: string, eId: number) =>
-  request('GET',    `/events/${eId}/matches`, token);
 export const apiCreateMatch    = (token: string, eId: number, d: any) =>
   request('POST',   `/events/${eId}/matches`, token, d);
 export const apiGetMatch          = (token: string, mId: number) =>
@@ -228,16 +207,10 @@ export const apiDeleteMatch    = (token: string, mId: number) =>
   request('DELETE', `/matches/${mId}`, token);
 export const apiFinishMatch    = (token: string, mId: number, d: any) =>
   request('POST',   `/matches/${mId}/finish`, token, d);
-export const apiBulkCreateMatches = (token: string, eId: number, d: any) =>
-  request('POST',   `/events/${eId}/matches/bulk`, token, d);
 
 // ── Teams ───────────────────────────────────────────────────────
 export const apiCreateTeam       = (token: string, orgId: number, d: any) =>
   request('POST',   `/orgs/${orgId}/teams`, token, d);
-export const apiGetOrgTeams      = (token: string, orgId: number, sport?: string) =>
-  request('GET',    `/orgs/${orgId}/teams${sport ? `?sport_key=${sport}` : ''}`, token);
-export const apiDeleteTeam       = (token: string, teamId: number) =>
-  request('DELETE', `/teams/${teamId}`, token);
 export const apiAddTeamToEvent   = (token: string, eId: number, tId: number, gId?: number) => {
   let url = `/events/${eId}/teams?team_id=${tId}`;
   if (gId) url += `&group_id=${gId}`;
@@ -248,11 +221,6 @@ export const apiRemoveTeamFromEvent = (token: string, eId: number, tId: number) 
 export const apiGetEventTeams = (token: string, eId: number) =>
   request('GET', `/events/${eId}/teams`, token);
 
-// ── Player history ──────────────────────────────────────────────
-export const apiGetMyTournaments = (token: string) =>
-  request('GET', '/auth/my-tournaments', token);
-export const apiGetMyStats       = (token: string) =>
-  request('GET', '/auth/my-stats',       token);
 export const apiDeleteAccount    = (token: string) =>
   request('DELETE', '/auth/me',          token);
 
@@ -324,6 +292,10 @@ export async function apiUploadMedia(
     headers: { Authorization: `Bearer ${token}` },
     body: formData,
   });
-  if (!res.ok) throw new Error('Upload failed');
+  if (!res.ok) {
+    let msg = 'Upload failed';
+    try { msg = (await res.json()).detail ?? msg; } catch { /* ignore */ }
+    throw new Error(msg === 'pro_required' ? 'This upload needs a Pro plan.' : msg);
+  }
   return res.json();
 }

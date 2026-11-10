@@ -108,6 +108,17 @@ export default function OrgHeader({ crumbs = [], right = null, user = null, onLo
                 </button>
               )}
               <ThemeBtn />
+              <button
+                onClick={() => navigate("/account")}
+                style={{
+                  background: "none", border: "1px solid var(--border)",
+                  borderRadius: 6, padding: "5px 11px",
+                  fontSize: 12, fontWeight: 700, color: "var(--ink)",
+                  cursor: "pointer",
+                }}
+              >
+                Account
+              </button>
               {onLogout && (
                 <button
                   onClick={onLogout}
@@ -173,6 +184,14 @@ export default function OrgHeader({ crumbs = [], right = null, user = null, onLo
             ) : null}
 
             <ThemeBtn />
+
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => navigate("/account")}
+              style={{ color: "var(--ink)" }}
+            >
+              Account
+            </button>
 
             {onLogout && (
               <button

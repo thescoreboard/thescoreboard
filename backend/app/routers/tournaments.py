@@ -1,7 +1,8 @@
 """
 Tournament routes — create wizard, workspace data, lifecycle management.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body
+from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 from datetime import datetime, timezone
@@ -28,6 +29,34 @@ from app.sports.registry import get_sport_engine
 from app.sports.bracket import build_bracket, assign_players_to_groups, order_group_qualifiers
 
 router = APIRouter()
+
+
+class BracketOrderIn(BaseModel):
+    """Manual bracket: participant ids in bracket order - the byes first (in
+    round-2 slot order), then the first-round pairs (1v2, 3v4, ...). See
+    app.sports.bracket.build_bracket."""
+    order: List[int]
+
+
+class ManualGroupIn(BaseModel):
+    name: str
+    participant_ids: List[int]   # bracket order inside the group
+
+
+class ManualGroupsIn(BaseModel):
+    groups: List[ManualGroupIn]
+
+
+def _validated_order(order: List[int], valid_ids, what: str = "participants") -> List[int]:
+    """The manual order must be exactly the valid ids, each used once."""
+    if len(order) != len(set(order)):
+        raise HTTPException(status_code=400, detail=f"Each of the {what} can only be placed once.")
+    if set(order) != set(valid_ids):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Place all {len(set(valid_ids))} {what} in the bracket - none missing, none extra.",
+        )
+    return list(order)
 
 
 # ── Helpers ───────────────────────────────────────────────────
@@ -369,6 +398,7 @@ def get_workspace(
                     "logo_url":      s.logo_url,
                     "website":       s.website,
                     "contact_phone": s.contact_phone,
+                    "contact_email": s.contact_email,
                     "description":   s.description,
                 }
                 for s in sponsors
@@ -587,6 +617,7 @@ def transition_status(
 def generate_fixtures(
     event_id: int,
     third_place: bool = False,
+    data: BracketOrderIn | None = Body(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -770,8 +801,13 @@ def generate_fixtures(
         # Delegate bracket layout to the dedicated knockout module.
         # build_bracket returns an ordered list of match specs with correct
         # stage labels and round numbers for any player count.
-        seed_scores = _get_seed_scores()
-        specs = build_bracket(ids, shuffle=not seed_scores, third_place=third_place, seed_scores=seed_scores)
+        if data and data.order:
+            # Manual draw: the organiser placed every participant themselves.
+            specs = build_bracket(
+                _validated_order(data.order, ids), shuffle=False, third_place=third_place)
+        else:
+            seed_scores = _get_seed_scores()
+            specs = build_bracket(ids, shuffle=not seed_scores, third_place=third_place, seed_scores=seed_scores)
 
         for spec in specs:
             table_counter += 1
@@ -1048,7 +1084,10 @@ def generate_group_matches(
             EventParticipant.group_id == group.group_id,
         ).all()
         if len(eps) < 2:
-            continue
+            raise HTTPException(
+                status_code=400,
+                detail=f"{group.name} needs at least 2 participants to play a group bracket.",
+            )
 
         ids   = [ep.team_id if is_team_event else ep.player_id for ep in eps]
         specs = build_bracket(ids, shuffle=False, third_place=False)
@@ -1087,6 +1126,90 @@ def generate_group_matches(
     return {"ok": True, "matches_created": matches_created}
 
 
+@router.post("/events/{event_id}/manual-groups")
+def manual_groups(
+    event_id: int,
+    data: ManualGroupsIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Manual group draw, done atomically: create every group, seat each
+    participant, and build each group's bracket in the order given.
+
+    Validation (nothing is written unless all of it passes):
+     - every enrolled participant is placed exactly once
+     - every group has at least 2 participants (a lone participant could never
+       play a group final, which would block the championship forever)
+     - no group match has been started
+    """
+    event = db.query(Event).filter(Event.event_id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    if event.format != "group_knockout":
+        raise HTTPException(status_code=400, detail="Event format must be group_knockout")
+    require_tournament_access(event.tournament_id, user, db)
+
+    is_team_event = event.participant_type in ("team", "doubles_pair")
+    engine = get_sport_engine(event.sport_key)
+    default_stw = (event.sport_config or engine.get_default_config()).get("sets_to_win", 2)
+
+    if len(data.groups) < 2:
+        raise HTTPException(status_code=400, detail="Create at least 2 groups.")
+    if db.query(Match).filter(Match.event_id == event_id, Match.status != "scheduled").count():
+        raise HTTPException(status_code=409, detail="Cannot redo the groups - matches are already in progress or done.")
+    if db.query(Match).filter(Match.event_id == event_id, Match.group_id == None).count():  # noqa: E711
+        raise HTTPException(status_code=409, detail="Cannot redo the groups - the championship bracket already exists.")
+
+    eps = db.query(EventParticipant).filter(EventParticipant.event_id == event_id).all()
+    ep_by_pid = {(ep.team_id if is_team_event else ep.player_id): ep for ep in eps}
+    placed = [pid for g in data.groups for pid in g.participant_ids]
+    _validated_order(placed, ep_by_pid.keys())
+    small = [g.name for g in data.groups if len(g.participant_ids) < 2]
+    if small:
+        raise HTTPException(status_code=400, detail=f"Every group needs at least 2 participants ({', '.join(small)}).")
+
+    # Wipe any previous (unstarted) groups and their matches.
+    for old in db.query(Group).filter(Group.event_id == event_id).all():
+        for m in db.query(Match).filter(Match.group_id == old.group_id).all():
+            db.delete(m)
+        db.delete(old)
+    for ep in eps:
+        ep.group_id = None
+    db.flush()
+
+    matches_created = 0
+    table_counter = 0
+    for g in data.groups:
+        group = Group(event_id=event_id, name=clean_name(g.name, "Group name"))
+        db.add(group)
+        db.flush()
+        for pid in g.participant_ids:
+            ep_by_pid[pid].group_id = group.group_id
+        for spec in build_bracket(g.participant_ids, shuffle=False, third_place=False):
+            table_counter += 1
+            match = Match(
+                event_id=event_id, group_id=group.group_id,
+                round=spec["round"], stage=spec["stage"], status="scheduled",
+                table_number=((table_counter - 1) % 2) + 1,
+                live_state={"sets_to_win": default_stw},
+            )
+            db.add(match)
+            db.flush()
+            for pos, pid in ((1, spec["pid1"]), (2, spec["pid2"])):
+                if pid is None:
+                    continue
+                db.add(MatchParticipant(
+                    match_id=match.match_id, position=pos,
+                    **({"team_id": pid} if is_team_event else {"player_id": pid})))
+            if hasattr(engine, "check_set_winner"):
+                db.add(MatchSet(match_id=match.match_id, set_number=1))
+            matches_created += 1
+
+    db.commit()
+    return {"ok": True, "groups_created": len(data.groups), "matches_created": matches_created}
+
+
 # ── Phase 2: generate knockout bracket from group standings ───
 
 @router.post("/events/{event_id}/generate-knockout-from-groups")
@@ -1094,6 +1217,7 @@ def generate_knockout_from_groups(
     event_id: int,
     qualifiers_per_group: int = 2,
     third_place: bool = False,
+    data: BracketOrderIn | None = Body(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -1190,6 +1314,8 @@ def generate_knockout_from_groups(
     # Cross-pair champions with other groups' runners-up (A1 vs B2, B1 vs C2, …)
     # so no champion meets another champion — or a group-mate — in round 1.
     qualified_ids: list = order_group_qualifiers(winners, runners)
+    if data and data.order:
+        qualified_ids = _validated_order(data.order, qualified_ids, "qualified participants")
 
     if len(qualified_ids) < 2:
         raise HTTPException(

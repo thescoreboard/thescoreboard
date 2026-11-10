@@ -74,12 +74,9 @@ export const deleteAccount      = ()  => request("DELETE", "/auth/me");
 // Orgs
 export const createOrg = (d) => request("POST", "/orgs/", d);
 export const getMyOrgs = () => request("GET", "/orgs/");
-export const deleteOrg = (orgId) => request("DELETE", `/orgs/${orgId}`);
 
 // Tournaments
 export const createTournament = (orgId, d) => request("POST", `/orgs/${orgId}/tournaments`, d);
-export const getTournaments = (orgId) => request("GET", `/orgs/${orgId}/tournaments`);
-export const getTournament = (tId) => request("GET", `/orgs/tournaments/${tId}`);
 export const updateTournament = (orgId, tId, d) => request("PATCH", `/orgs/${orgId}/tournaments/${tId}`, d);
 export const deleteTournament = (orgId, tournamentId) =>
   request("DELETE", `/orgs/${orgId}/tournaments/${tournamentId}`);
@@ -93,25 +90,20 @@ export const deleteSponsor = (tId, sId)        => request("DELETE", `/orgs/tourn
 
 
 // Events
-export const createEvent = (tId, d) => request("POST", `/tournaments/${tId}/events`, d);
-export const getEvents = (tId) => request("GET", `/tournaments/${tId}/events`);
 export const updateEvent = (eId, d) => request("PATCH", `/events/${eId}`, d);
 export const configureEvent = (eId, d) => request("POST", `/events/${eId}/configure`, d);
-export const generateFixtures = (eId, thirdPlace = false) =>
-  request("POST", `/orgs/events/${eId}/generate-fixtures${thirdPlace ? "?third_place=true" : ""}`);
+export const generateFixtures = (eId, thirdPlace = false, order = null) =>
+  request("POST", `/orgs/events/${eId}/generate-fixtures${thirdPlace ? "?third_place=true" : ""}`, order ? { order } : undefined);
 export const generateGroupMatches = (eId) =>
   request("POST", `/events/${eId}/generate-group-matches`);
 export const getStandings = (eId) => request("GET", `/orgs/events/${eId}/standings`);
 
 // Players
 export const createPlayer = (d, orgId) => request("POST", `/players/${orgId ? `?org_id=${orgId}` : ""}`, d);
-export const getPlayers = (orgId) => request("GET", `/players/${orgId ? `?org_id=${orgId}` : ""}`);
-export const deletePlayer = (id) => request("DELETE", `/players/${id}`);
 export const addPlayerToEvent = (eId, pId, gId, seed) => {
   let qs = `player_id=${pId}`; if (gId) qs += `&group_id=${gId}`; if (seed) qs += `&seed=${seed}`;
   return request("POST", `/players/events/${eId}/participants?${qs}`);
 };
-export const getEventParticipants = (eId) => request("GET", `/players/events/${eId}/participants`);
 export const removePlayerFromEvent = (eId, pId) => request("DELETE", `/players/events/${eId}/participants/${pId}`);
 export const assignPlayerGroup = (eId, pId, gId) =>
   request("PATCH", `/players/events/${eId}/participants/${pId}${gId != null ? `?group_id=${gId}` : ""}`);
@@ -120,7 +112,6 @@ export const updateParticipantSeed = (eId, pId, seedLevel) =>
 export const createGroup = (eId, name) => request("POST", `/players/events/${eId}/groups?name=${encodeURIComponent(name)}`);
 
 // Matches
-export const getMatches = (eId) => request("GET", `/events/${eId}/matches`);
 export const createMatch = (eId, d) => request("POST", `/events/${eId}/matches`, d);
 export const updateMatchStatus = (mId, d) => request("PATCH", `/matches/${mId}/status`, d);
 export const updateScore = (mId, d) => request("PATCH", `/matches/${mId}/score`, d);
@@ -149,27 +140,12 @@ export const getTournamentBySlug = (slug) => request("GET", `/public/t/${slug}`)
 export const getSportTournament = (u, slug) => request("GET", `/public/sport/${u}/tournament/${slug}`);
 
 // Organiser team management
-export const createTeam        = (orgId, d)       => request("POST",   `/orgs/${orgId}/teams`, d);
-export const getOrgTeams       = (orgId, sport)   => request("GET",    `/orgs/${orgId}/teams${sport ? `?sport_key=${sport}` : ""}`);
-export const deleteTeam        = (teamId)         => request("DELETE", `/teams/${teamId}`);
 export const addTeamToEvent    = (eId, tId, gId)  => request("POST",   `/events/${eId}/teams?team_id=${tId}${gId ? `&group_id=${gId}` : ""}`);
-export const assignTeamGroup   = (eId, tId, gId)  => request("PATCH",  `/events/${eId}/teams/${tId}${gId != null ? `?group_id=${gId}` : ""}`);
 export const removeTeamFromEvent = (eId, tId)     => request("DELETE", `/events/${eId}/teams/${tId}`);
 export const getEventTeams     = (eId)            => request("GET",    `/events/${eId}/teams`);
  
 // Match finish (cricket/football)
-export const finishMatch       = (mId, winnerPos) => request("POST", `/matches/${mId}/finish`, { winner_position: winnerPos });
- 
 // Public team registration
-export const publicRegisterTeam = (tournamentId, d) =>
-  fetch(`${BASE}/public/tournaments/${tournamentId}/register-team`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(d),
-  }).then(async (r) => {
-    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || r.status); }
-    return r.json();
-  });
 
 // Media upload (direct — file goes to backend, backend proxies to Supabase)
 

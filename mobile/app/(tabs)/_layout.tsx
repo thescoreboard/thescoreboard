@@ -17,9 +17,7 @@ function TabIcon({ label, focused, color }: { label: string; focused: boolean; c
 
 export default function TabLayout() {
   const { theme } = useTheme();
-  const { mode, isLoggedIn } = useAuthStore(s => ({ mode: s.mode, isLoggedIn: s.isLoggedIn }));
-  const isOrganiser = isLoggedIn() && mode === 'organiser';
-  const isPlayer    = !isOrganiser; // guest + player both see player-style tabs
+  const loggedIn = useAuthStore(st => st.isLoggedIn());
 
   return (
     <Tabs
@@ -43,15 +41,15 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="explore"
-        options={{ tabBarIcon: ({ color, focused }) => <TabIcon label={isPlayer ? 'Explore' : 'Guides'} focused={focused} color={color} /> }}
+        options={{ tabBarIcon: ({ color, focused }) => <TabIcon label={loggedIn ? 'Guides' : 'Explore'} focused={focused} color={color} /> }}
       />
       <Tabs.Screen
         name="organiser"
-        options={{ tabBarIcon: ({ color, focused }) => <TabIcon label={isPlayer ? 'Matches' : 'Organise'} focused={focused} color={color} /> }}
+        options={{ tabBarIcon: ({ color, focused }) => <TabIcon label="Organise" focused={focused} color={color} /> }}
       />
       <Tabs.Screen
         name="profile"
-        options={{ tabBarIcon: ({ color, focused }) => <TabIcon label={isPlayer ? 'Dashboard' : 'Profile'} focused={focused} color={color} /> }}
+        options={{ tabBarIcon: ({ color, focused }) => <TabIcon label="Profile" focused={focused} color={color} /> }}
       />
     </Tabs>
   );

@@ -1335,11 +1335,6 @@ function HeroBand({ tournament, totalPlayers, doneMatches, totalMatches, sportKe
   // Sport + format eyebrow
   const formatLabel = events[0]?.format ? events[0].format.replace(/_/g, " ") : null;
 
-  // Organiser identity — initials avatar (no logo upload yet, no verification concept)
-  const orgInitials = tournament.org_name
-    ? tournament.org_name.trim().split(/\s+/).slice(0, 2).map(w => w[0] || "").join("").toUpperCase()
-    : null;
-
   // Team abbreviation helper
   const teamAbbr = (name) => {
     if (!name || name === "TBD") return name || "?";
@@ -1408,23 +1403,6 @@ function HeroBand({ tournament, totalPlayers, doneMatches, totalMatches, sportKe
               </span>
             )}
           </div>
-
-          {/* Organiser identity — initials avatar + club name (no logo/verification yet) */}
-          {tournament.org_name && (
-            <div style={{ display:"flex", alignItems:"center", gap:9, marginTop:14 }}>
-              <div style={{
-                width:30, height:30, borderRadius:"50%", flexShrink:0,
-                background:"var(--primary)", color:"#fff",
-                display:"flex", alignItems:"center", justifyContent:"center",
-                fontFamily:"var(--font-display)", fontSize:11, fontWeight:900,
-              }}>
-                {orgInitials}
-              </div>
-              <span style={{ fontSize:13, fontWeight:700, color: tournament.poster_url ? "#fff" : "var(--ink)" }}>
-                {tournament.org_name}
-              </span>
-            </div>
-          )}
 
           {/* Share */}
           <div style={{ display:"flex", gap:10, marginTop:18, flexWrap:"wrap" }}>

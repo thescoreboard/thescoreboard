@@ -1,6 +1,6 @@
 /**
- * Explore screen — tournament browser for players/guests.
- * Organiser mode → Feature Guides.
+ * Explore screen — tournament browser for guests.
+ * Signed-in organisers see the Feature Guides instead.
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -210,7 +210,7 @@ export default function ExploreScreen() {
   const { theme } = useTheme();
   const router    = useRouter();
   const params    = useLocalSearchParams<{ sport?: string }>();
-  const { mode, isLoggedIn } = useAuthStore();
+  const { isLoggedIn } = useAuthStore();
   const c = theme.colors;
 
   // ── All hooks must run unconditionally before any early return ──────────────
@@ -254,7 +254,7 @@ export default function ExploreScreen() {
   useEffect(() => { const id = setInterval(load, 10000); return () => clearInterval(id); }, [load]);
 
   // ── Safe to conditionally render now — all hooks have been called ──────────
-  if (isLoggedIn() && mode === 'organiser') return <OrganiserGuides />;
+  if (isLoggedIn()) return <OrganiserGuides />;
 
   const tournaments: any[] = data?.tournaments ?? [];
   const cities: string[]   = data?.cities ?? [];

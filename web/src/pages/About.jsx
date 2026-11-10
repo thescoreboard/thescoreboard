@@ -4,6 +4,7 @@
  */
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import LandingHeader from "../components/shared/LandingHeader";
 import usePageMeta from "../hooks/usePageMeta";
 
 const INSTAGRAM_URL  = "https://www.instagram.com/thescoreboard.in/";
@@ -42,46 +43,13 @@ export default function About() {
   const w = useW();
   const isDesktop = w >= 860;
 
-  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-  }, [theme]);
-  const toggleTheme = () => {
-    const next = theme === "light" ? "dark" : "light";
-    setTheme(next);
-    localStorage.setItem("theme", next);
-  };
-
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--ink)" }}>
-      {/* ── Hero band — full-bleed brand gradient, stands in for the site header ── */}
-      <div style={{ background: "linear-gradient(135deg, #150800 0%, #2a1000 100%)", padding: "clamp(20px, 4vw, 28px) clamp(16px, 4vw, 24px) clamp(40px, 7vw, 72px)" }}>
+      <LandingHeader />
+
+      {/* ── Hero band — full-bleed brand gradient ── */}
+      <div style={{ background: "linear-gradient(135deg, #150800 0%, #2a1000 100%)", padding: "clamp(36px, 6vw, 64px) clamp(16px, 4vw, 24px) clamp(40px, 7vw, 72px)" }}>
         <div style={{ maxWidth: PAGE_MAX, margin: "0 auto" }}>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "clamp(24px, 5vw, 44px)" }}>
-            <button
-              onClick={toggleTheme}
-              aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
-              style={{
-                background: "none", border: "1px solid rgba(255,255,255,0.25)",
-                borderRadius: 6, width: 34, height: 34, cursor: "pointer",
-                color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
-              }}
-            >
-              {theme === "light" ? (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-                </svg>
-              ) : (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="5"/>
-                  <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
-                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-                  <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
-                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-                </svg>
-              )}
-            </button>
-          </div>
           <p style={{ ...sectionLabel, color: "var(--primary)", marginBottom: 14 }}>About TheScoreBoard</p>
           <h1 style={{
             fontFamily: "var(--font-display)", fontSize: "clamp(28px, 5vw, 46px)",
